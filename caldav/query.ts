@@ -308,9 +308,11 @@ function aggregateTodos(todos: Todo[]): TodoQueryResult {
     truncated,
     todos: sliced.map((t) => ({
       summary: t.summary,
+      description: t.description,
       status: TodoStatusLabel[t.status],
       priority: t.priority,
       due: t.due,
+      relatedTo: t.relatedTo,
       calendarName: t.calendarName,
       url: t.url,
       etag: t.etag,
@@ -335,6 +337,7 @@ function aggregateEvents(events: Event[]): EventQueryResult {
     truncated,
     events: sliced.map((e) => ({
       summary: e.summary,
+      description: e.description,
       start: e.start,
       end: e.end,
       location: e.location,

@@ -23,6 +23,7 @@ export interface Todo {
   due?: string; // ISO 8601
   completed?: string; // ISO 8601
   percentComplete?: number; // 0-100
+  relatedTo?: string[]; // UIDs of related tasks (RFC 5545 RELATED-TO)
   url: string;
   etag: string;
   calendarName: string;
@@ -74,9 +75,11 @@ export interface TodoQueryResult {
 
 export interface TodoSummary {
   summary: string;
+  description?: string;
   status: string;
   priority?: number;
   due?: string;
+  relatedTo?: string[];
   calendarName: string;
   url: string;
   etag: string;
@@ -91,6 +94,7 @@ export interface EventQueryResult {
 
 export interface EventSummary {
   summary: string;
+  description?: string;
   start: string;
   end: string;
   location?: string;

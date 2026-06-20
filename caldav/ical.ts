@@ -198,6 +198,14 @@ export function parseTodos(text: string, calendarName: string, baseUrl: string, 
     const completed = d['COMPLETED'] ? fromICalDate(d['COMPLETED']) : undefined;
     const percentComplete = d['PERCENT-COMPLETE'] ? parseInt(d['PERCENT-COMPLETE'], 10) : undefined;
 
+    // Extract RELATED-TO (can appear multiple times — collect all)
+    const relatedTo: string[] = [];
+    const relatedRegex = /^RELATED-TO(?:;[^:]*)?:(.*)$/gm;
+    let rtMatch: RegExpExecArray | null;
+    while ((rtMatch = relatedRegex.exec(unfold(text))) !== null) {
+      relatedTo.push(unescapeICal(rtMatch[1]!.trim()));
+    }
+
     todos.push({
       summary: d['SUMMARY'] || 'Untitled',
       description: d['DESCRIPTION'],
@@ -206,6 +214,7 @@ export function parseTodos(text: string, calendarName: string, baseUrl: string, 
       due,
       completed,
       percentComplete,
+      relatedTo: relatedTo.length > 0 ? relatedTo : undefined,
       url,
       etag: etags.get(uid) || '',
       calendarName,
