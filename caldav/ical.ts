@@ -131,6 +131,8 @@ export function buildEventIcal(event: {
 export interface ParsedIcal {
   component: 'VTODO' | 'VEVENT';
   data: Record<string, string>;
+  /** Raw iCal block text for the component (for multi-value properties like RELATED-TO) */
+  rawBlock: string;
 }
 
 /**
@@ -144,6 +146,7 @@ export function parseIcal(text: string): ParsedIcal[] {
 
   let currentComponent: 'VTODO' | 'VEVENT' | null = null;
   let currentData: Record<string, string> | null = null;
+  let currentRaw: string[] | null = null;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -152,16 +155,24 @@ export function parseIcal(text: string): ParsedIcal[] {
     if (line === 'BEGIN:VTODO' || line === 'BEGIN:VEVENT') {
       currentComponent = line.slice(6) as 'VTODO' | 'VEVENT';
       currentData = {};
+      currentRaw = [];
       continue;
     }
 
     if (line === 'END:VTODO' || line === 'END:VEVENT') {
       if (currentComponent && currentData) {
-        results.push({ component: currentComponent, data: currentData });
+        // Reconstruct raw block for multi-value property extraction
+        const rawBlock = `BEGIN:${currentComponent}\r\n${currentRaw!.join('\r\n')}\r\nEND:${currentComponent}`;
+        results.push({ component: currentComponent, data: currentData, rawBlock });
       }
       currentComponent = null;
       currentData = null;
+      currentRaw = null;
       continue;
+    }
+
+    if (currentData) {
+      currentRaw?.push(rawLine);
     }
 
     if (currentData && line.includes(':')) {
@@ -198,12 +209,13 @@ export function parseTodos(text: string, calendarName: string, baseUrl: string, 
     const completed = d['COMPLETED'] ? fromICalDate(d['COMPLETED']) : undefined;
     const percentComplete = d['PERCENT-COMPLETE'] ? parseInt(d['PERCENT-COMPLETE'], 10) : undefined;
 
-    // Extract RELATED-TO (can appear multiple times — collect all)
+    // Extract RELATED-TO from current VTODO block only (multi-value property)
     const relatedTo: string[] = [];
     const relatedRegex = /^RELATED-TO(?:;[^:]*)?:(.*)$/gm;
     let rtMatch: RegExpExecArray | null;
-    while ((rtMatch = relatedRegex.exec(unfold(text))) !== null) {
-      relatedTo.push(unescapeICal(rtMatch[1]!.trim()));
+    while ((rtMatch = relatedRegex.exec(item.rawBlock)) !== null) {
+      const val = rtMatch[1]!.trim();
+      if (!relatedTo.includes(val)) relatedTo.push(val); // deduplicate
     }
 
     todos.push({
