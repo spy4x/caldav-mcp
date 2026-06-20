@@ -1,0 +1,22 @@
+# ── Homelab deployment ──
+services:
+  caldav-mcp:
+    build: .
+    container_name: caldav-mcp
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - CALDAV_URL=${CALDAV_URL}
+      - CALDAV_USERNAME=${CALDAV_USERNAME}
+      - CALDAV_PASSWORD=${CALDAV_PASSWORD}
+      - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN}
+      - LOG_LEVEL=info
+    mem_limit: 128M
+    cpus: 0.25
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
