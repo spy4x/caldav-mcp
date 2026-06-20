@@ -312,7 +312,7 @@ function aggregateTodos(todos: Todo[]): TodoQueryResult {
       status: TodoStatusLabel[t.status],
       priority: t.priority,
       due: t.due,
-      relatedTo: t.relatedTo,
+      relatedTo: t.relatedTo?.map((r) => ({ uid: r.uid, reltype: r.reltype })),
       calendarName: t.calendarName,
       url: t.url,
       etag: t.etag,

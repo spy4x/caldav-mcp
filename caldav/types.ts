@@ -15,6 +15,11 @@ export interface Calendar {
   ctag?: string;
 }
 
+export interface RelatedTo {
+  uid: string;
+  reltype: 'PARENT' | 'CHILD' | 'SIBLING';
+}
+
 export interface Todo {
   summary: string;
   description?: string;
@@ -23,7 +28,7 @@ export interface Todo {
   due?: string; // ISO 8601
   completed?: string; // ISO 8601
   percentComplete?: number; // 0-100
-  relatedTo?: string[]; // UIDs of related tasks (RFC 5545 RELATED-TO)
+  relatedTo?: RelatedTo[]; // Related tasks (RFC 5545 RELATED-TO)
   url: string;
   etag: string;
   calendarName: string;
@@ -79,7 +84,7 @@ export interface TodoSummary {
   status: string;
   priority?: number;
   due?: string;
-  relatedTo?: string[];
+  relatedTo?: string[] | { uid: string; reltype: string }[];
   calendarName: string;
   url: string;
   etag: string;

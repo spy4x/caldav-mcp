@@ -1,7 +1,7 @@
 // ── iCal (RFC 5545) parser & generator ──
 // No dependencies. Handles line folding, escaping, VTODO/VEVENT.
 
-import type { Todo, Event } from './types.ts';
+import type { Todo, Event, RelatedTo } from './types.ts';
 import { LabelTodoStatus, TodoStatus } from './types.ts';
 
 // ── Line folding / unfolding ──
@@ -209,13 +209,17 @@ export function parseTodos(text: string, calendarName: string, baseUrl: string, 
     const completed = d['COMPLETED'] ? fromICalDate(d['COMPLETED']) : undefined;
     const percentComplete = d['PERCENT-COMPLETE'] ? parseInt(d['PERCENT-COMPLETE'], 10) : undefined;
 
-    // Extract RELATED-TO from current VTODO block only (multi-value property)
-    const relatedTo: string[] = [];
-    const relatedRegex = /^RELATED-TO(?:;[^:]*)?:(.*)$/gm;
+    // Extract RELATED-TO with RELTYPE (PARENT/CHILD/SIBLING)
+    const relatedTo: RelatedTo[] = [];
+    const relatedRegex = /^RELATED-TO(?:;RELTYPE=(\w+))?:(.*)$/gm;
     let rtMatch: RegExpExecArray | null;
     while ((rtMatch = relatedRegex.exec(item.rawBlock)) !== null) {
-      const val = rtMatch[1]!.trim();
-      if (!relatedTo.includes(val)) relatedTo.push(val); // deduplicate
+      const reltype = (rtMatch[1] || 'PARENT').toUpperCase() as RelatedTo['reltype'];
+      const uid = rtMatch[2]!.trim();
+      // Deduplicate by uid
+      if (!relatedTo.some((r) => r.uid === uid)) {
+        relatedTo.push({ uid, reltype });
+      }
     }
 
     todos.push({
