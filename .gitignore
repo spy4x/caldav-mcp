@@ -1,3 +1,10 @@
 caldav-mcp
-caldav-mcp-v2
 deno.lock
+
+# Environment files (secrets never committed)
+.env
+.env.*
+
+# Age encryption key (if added in future)
+.age/
+key.txt
