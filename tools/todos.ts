@@ -7,7 +7,8 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'query_todos',
-      description: 'Search todos across all calendars. Returns summary + filtered list. Without filters — returns all todos.',
+      description:
+        'Search todos across all calendars. Returns summary + filtered list. Without filters — returns all todos.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -18,7 +19,10 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
             description: 'Filter by status',
           },
           text: { type: 'string', description: 'Search text in summary/description' },
-          dueBefore: { type: 'string', description: 'ISO date — return tasks due before this time' },
+          dueBefore: {
+            type: 'string',
+            description: 'ISO date — return tasks due before this time',
+          },
           priority: {
             type: 'object',
             properties: {
@@ -39,9 +43,9 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
         dueBefore: args['dueBefore'] as string | undefined,
         priority: priorityArg
           ? {
-              min: priorityArg['min'] as number | undefined,
-              max: priorityArg['max'] as number | undefined,
-            }
+            min: priorityArg['min'] as number | undefined,
+            max: priorityArg['max'] as number | undefined,
+          }
           : undefined,
       });
     },
@@ -77,6 +81,11 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
           calendarUrl: { type: 'string', description: 'Calendar URL where to create the todo' },
           summary: { type: 'string', description: 'Task summary/title' },
           description: { type: 'string', description: 'Task description (supports long text)' },
+          categories: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Categories/tags for the task',
+          },
           due: { type: 'string', description: 'ISO date string for due date' },
           priority: { type: 'number', description: 'Priority 1-9 (1=highest)' },
           status: {
@@ -100,6 +109,7 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
       const result = await engine.createTodo(calendarUrl, {
         summary,
         description: args['description'] as string | undefined,
+        categories: args['categories'] as string[] | undefined,
         due: args['due'] as string | undefined,
         priority: args['priority'] as number | undefined,
         status: args['status'] as string | undefined,
@@ -121,6 +131,11 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
           etag: { type: 'string', description: 'Current ETag (from query_todos or get_todo)' },
           summary: { type: 'string', description: 'New summary' },
           description: { type: 'string', description: 'New description' },
+          categories: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Categories/tags for the task',
+          },
           due: { type: 'string', description: 'New due date (ISO)' },
           priority: { type: 'number', description: 'New priority 1-9' },
           status: {
@@ -144,6 +159,7 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
         const newEtag = await engine.updateTodo(url, etag, {
           summary: args['summary'] as string | undefined,
           description: args['description'] as string | undefined,
+          categories: args['categories'] as string[] | undefined,
           due: args['due'] as string | undefined,
           priority: args['priority'] as number | undefined,
           status: args['status'] as string | undefined,

@@ -30,7 +30,8 @@ async function main(): Promise<void> {
 
   // Determine transport
   const args = Deno.args;
-  const useHttp = args.includes('--http') || args.includes('-h') || !!Deno.env.get('MCP_BEARER_TOKEN');
+  const useHttp = args.includes('--http') || args.includes('-h') ||
+    !!Deno.env.get('MCP_BEARER_TOKEN');
 
   if (useHttp) {
     await startHttp(mcp, env, log);
@@ -40,7 +41,10 @@ async function main(): Promise<void> {
 }
 
 // ── stdio transport (default) ──
-async function startStdio(mcp: McpHandler, log: (level: string, msg: string) => void): Promise<void> {
+async function startStdio(
+  mcp: McpHandler,
+  log: (level: string, msg: string) => void,
+): Promise<void> {
   log('info', 'Starting stdio transport...');
   log('info', 'Ready — waiting for MCP messages on stdin');
 
@@ -99,9 +103,24 @@ function startHttp(
     }
 
     // Auth check (only for MCP routes)
+    // Accepts token from multiple sources:
+    //   - Authorization: Bearer <token>
+    //   - Authorization: <token>
+    //   - X-Api-Key: <token>
+    //   - ?api_key=<token>  (query param)
     if (env.mcpBearerToken) {
-      const auth = req.headers.get('Authorization') || '';
-      if (auth !== `Bearer ${env.mcpBearerToken}`) {
+      const authHeader = req.headers.get('Authorization') || '';
+      const apiKeyHeader = req.headers.get('X-Api-Key') || '';
+      const queryToken = url.searchParams.get('api_key') || '';
+      const valid = authHeader === `Bearer ${env.mcpBearerToken}` ||
+        authHeader === env.mcpBearerToken ||
+        apiKeyHeader === env.mcpBearerToken ||
+        queryToken === env.mcpBearerToken;
+      if (!valid) {
+        log(
+          'debug',
+          `Auth failed: Authorization="${authHeader}" X-Api-Key="${apiKeyHeader}" query="${queryToken}"`,
+        );
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
           status: 401,
           headers: { 'Content-Type': 'application/json' },
@@ -153,14 +172,17 @@ async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (_err) {
-    return new Response(JSON.stringify({
-      jsonrpc: '2.0',
-      id: null,
-      error: { code: -32700, message: 'Parse error' },
-    }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32700, message: 'Parse error' },
+      }),
+      {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
   }
 }
 
@@ -169,7 +191,9 @@ function handleMcpSse(_req: Request, _mcp: McpHandler): Response {
   // The POST handler at /mcp returns JSON-RPC responses directly.
   // Using ReadableStream with immediate flushing for Deno.serve compatibility.
   let resolveStart: (() => void) | undefined;
-  const startPromise = new Promise<void>((r) => { resolveStart = r; });
+  const startPromise = new Promise<void>((r) => {
+    resolveStart = r;
+  });
 
   const body = new ReadableStream({
     start(controller) {
@@ -185,7 +209,9 @@ function handleMcpSse(_req: Request, _mcp: McpHandler): Response {
 
   // Ensure the stream starts immediately by awaiting the start promise
   // This forces Deno.serve to begin streaming the response
-  (async () => { await startPromise; })();
+  (async () => {
+    await startPromise;
+  })();
 
   return new Response(body, {
     status: 200,

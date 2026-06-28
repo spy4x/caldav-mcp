@@ -32,6 +32,31 @@ export function registerCalendarTools(mcp: McpHandler, engine: QueryEngine): voi
 
   mcp.registerTool(
     {
+      name: 'delete_calendar',
+      description: 'Delete a calendar collection and all its events/todos',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Calendar URL to delete' },
+        },
+        required: ['url'],
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      const url = args['url'] as string;
+      if (!url) return { error: 'url is required' };
+
+      try {
+        await engine['client'].deleteResource(url);
+        return { success: true, url };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  mcp.registerTool(
+    {
       name: 'make_calendar',
       description: 'Create a new calendar collection',
       inputSchema: {

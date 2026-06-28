@@ -2,8 +2,8 @@
 // Fetches all calendars → queries each in parallel → aggregates results.
 
 import { CalDavClient } from './client.ts';
-import { parseTodos, parseEvents } from './ical.ts';
-import type { Calendar, Todo, Event, TodoQueryResult, EventQueryResult } from './types.ts';
+import { parseEvents, parseTodos } from './ical.ts';
+import type { Calendar, Event, EventQueryResult, Todo, TodoQueryResult } from './types.ts';
 import { ComponentType, TodoStatus, TodoStatusLabel } from './types.ts';
 import type { PriorityFilter } from './types.ts';
 
@@ -19,7 +19,9 @@ export class QueryEngine {
 
   /** Get auth headers for direct fetch calls */
   getAuthHeaders(): Record<string, string> {
-    return { Authorization: `Basic ${btoa(`${this.client['username']}:${this.client['password']}`)}` };
+    return {
+      Authorization: `Basic ${btoa(`${this.client['username']}:${this.client['password']}`)}`,
+    };
   }
 
   /** Fetch all calendars */
@@ -36,13 +38,24 @@ export class QueryEngine {
     priority?: PriorityFilter;
   }): Promise<TodoQueryResult> {
     const calendars = opts.calendarUrl
-      ? [{ url: opts.calendarUrl, displayName: opts.calendarUrl, components: [ComponentType.VTODO] } as Calendar]
-      : (await this.listCalendars()).filter((c) =>
-        c.components.includes(ComponentType.VTODO)
-      );
+      ? [
+        {
+          url: opts.calendarUrl,
+          displayName: opts.calendarUrl,
+          components: [ComponentType.VTODO],
+        } as Calendar,
+      ]
+      : (await this.listCalendars()).filter((c) => c.components.includes(ComponentType.VTODO));
 
     if (calendars.length === 0) {
-      return { total: 0, byStatus: {}, byPriority: { high: 0, medium: 0, low: 0, none: 0 }, overdue: 0, truncated: false, todos: [] };
+      return {
+        total: 0,
+        byStatus: {},
+        byPriority: { high: 0, medium: 0, low: 0, none: 0 },
+        overdue: 0,
+        truncated: false,
+        todos: [],
+      };
     }
 
     // Query all calendars in parallel
@@ -115,10 +128,14 @@ export class QueryEngine {
     text?: string;
   }): Promise<EventQueryResult> {
     const calendars = opts.calendarUrl
-      ? [{ url: opts.calendarUrl, displayName: opts.calendarUrl, components: [ComponentType.VEVENT] } as Calendar]
-      : (await this.listCalendars()).filter((c) =>
-        c.components.includes(ComponentType.VEVENT)
-      );
+      ? [
+        {
+          url: opts.calendarUrl,
+          displayName: opts.calendarUrl,
+          components: [ComponentType.VEVENT],
+        } as Calendar,
+      ]
+      : (await this.listCalendars()).filter((c) => c.components.includes(ComponentType.VEVENT));
 
     if (calendars.length === 0) {
       return { total: 0, upcoming: 0, truncated: false, events: [] };
@@ -172,12 +189,21 @@ export class QueryEngine {
   /** Create a todo */
   async createTodo(
     calendarUrl: string,
-    todo: { summary: string; description?: string; due?: string; priority?: number; status?: string; percentComplete?: number },
+    todo: {
+      summary: string;
+      description?: string;
+      categories?: string[];
+      due?: string;
+      priority?: number;
+      status?: string;
+      percentComplete?: number;
+    },
   ): Promise<{ url: string; etag: string }> {
     const { buildTodoIcal } = await import('./ical.ts');
     const ical = buildTodoIcal({
       summary: todo.summary,
       description: todo.description,
+      categories: todo.categories,
       status: todo.status,
       priority: todo.priority,
       due: todo.due,
@@ -196,7 +222,15 @@ export class QueryEngine {
   async updateTodo(
     url: string,
     etag: string,
-    updates: { summary?: string; description?: string; due?: string; priority?: number; status?: string; percentComplete?: number },
+    updates: {
+      summary?: string;
+      description?: string;
+      categories?: string[];
+      due?: string;
+      priority?: number;
+      status?: string;
+      percentComplete?: number;
+    },
   ): Promise<string> {
     const existing = await this.getTodo(url);
     if (!existing) throw new Error('Todo not found');
@@ -205,6 +239,7 @@ export class QueryEngine {
     const ical = buildTodoIcal({
       summary: updates.summary ?? existing.summary,
       description: updates.description ?? existing.description,
+      categories: updates.categories ?? existing.categories,
       status: updates.status ?? TodoStatusLabel[existing.status],
       priority: updates.priority ?? existing.priority,
       due: updates.due ?? existing.due,
@@ -246,7 +281,13 @@ export class QueryEngine {
   async updateEvent(
     url: string,
     etag: string,
-    updates: { summary?: string; description?: string; start?: string; end?: string; location?: string },
+    updates: {
+      summary?: string;
+      description?: string;
+      start?: string;
+      end?: string;
+      location?: string;
+    },
   ): Promise<string> {
     const existing = await this.getEvent(url);
     if (!existing) throw new Error('Event not found');
@@ -309,6 +350,7 @@ function aggregateTodos(todos: Todo[]): TodoQueryResult {
     todos: sliced.map((t) => ({
       summary: t.summary,
       description: t.description,
+      categories: t.categories,
       status: TodoStatusLabel[t.status],
       priority: t.priority,
       due: t.due,

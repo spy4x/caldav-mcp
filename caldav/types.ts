@@ -23,6 +23,7 @@ export interface RelatedTo {
 export interface Todo {
   summary: string;
   description?: string;
+  categories?: string[]; // RFC 5545 CATEGORIES
   status: TodoStatus;
   priority?: number; // 1-9, RFC 5545
   due?: string; // ISO 8601
@@ -81,6 +82,7 @@ export interface TodoQueryResult {
 export interface TodoSummary {
   summary: string;
   description?: string;
+  categories?: string[];
   status: string;
   priority?: number;
   due?: string;

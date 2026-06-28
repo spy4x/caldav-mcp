@@ -1,7 +1,7 @@
 // ── iCal (RFC 5545) parser & generator ──
 // No dependencies. Handles line folding, escaping, VTODO/VEVENT.
 
-import type { Todo, Event, RelatedTo } from './types.ts';
+import type { Event, RelatedTo, Todo } from './types.ts';
 import { LabelTodoStatus, TodoStatus } from './types.ts';
 
 // ── Line folding / unfolding ──
@@ -47,6 +47,7 @@ function unescapeICal(s: string): string {
 export function buildTodoIcal(todo: {
   summary: string;
   description?: string;
+  categories?: string[];
   status?: string;
   priority?: number;
   due?: string;
@@ -69,6 +70,9 @@ export function buildTodoIcal(todo: {
 
   if (todo.description) {
     lines.push(`DESCRIPTION:${escapeICal(todo.description)}`);
+  }
+  if (todo.categories && todo.categories.length > 0) {
+    lines.push(`CATEGORIES:${todo.categories.map(escapeICal).join(',')}`);
   }
   if (todo.priority !== undefined && todo.priority >= 1 && todo.priority <= 9) {
     lines.push(`PRIORITY:${todo.priority}`);
@@ -162,7 +166,9 @@ export function parseIcal(text: string): ParsedIcal[] {
     if (line === 'END:VTODO' || line === 'END:VEVENT') {
       if (currentComponent && currentData) {
         // Reconstruct raw block for multi-value property extraction
-        const rawBlock = `BEGIN:${currentComponent}\r\n${currentRaw!.join('\r\n')}\r\nEND:${currentComponent}`;
+        const rawBlock = `BEGIN:${currentComponent}\r\n${
+          currentRaw!.join('\r\n')
+        }\r\nEND:${currentComponent}`;
         results.push({ component: currentComponent, data: currentData, rawBlock });
       }
       currentComponent = null;
@@ -191,7 +197,12 @@ export function parseIcal(text: string): ParsedIcal[] {
 }
 
 /** Parse iCal text into Todo objects */
-export function parseTodos(text: string, calendarName: string, baseUrl: string, etags: Map<string, string>): Todo[] {
+export function parseTodos(
+  text: string,
+  calendarName: string,
+  baseUrl: string,
+  etags: Map<string, string>,
+): Todo[] {
   const parsed = parseIcal(text);
   const todos: Todo[] = [];
 
@@ -203,6 +214,10 @@ export function parseTodos(text: string, calendarName: string, baseUrl: string, 
 
     const statusStr = d['STATUS'] || 'NEEDS-ACTION';
     const status = LabelTodoStatus[statusStr] || TodoStatus.NEEDS_ACTION;
+
+    const categories = d['CATEGORIES']
+      ? d['CATEGORIES'].split(',').map((c) => c.trim()).filter(Boolean)
+      : undefined;
 
     const priority = d['PRIORITY'] ? parseInt(d['PRIORITY'], 10) : undefined;
     const due = d['DUE'] ? fromICalDate(d['DUE']) : undefined;
@@ -225,6 +240,7 @@ export function parseTodos(text: string, calendarName: string, baseUrl: string, 
     todos.push({
       summary: d['SUMMARY'] || 'Untitled',
       description: d['DESCRIPTION'],
+      categories,
       status,
       priority: (priority !== undefined && priority >= 1 && priority <= 9) ? priority : undefined,
       due,
@@ -242,7 +258,12 @@ export function parseTodos(text: string, calendarName: string, baseUrl: string, 
 }
 
 /** Parse iCal text into Event objects */
-export function parseEvents(text: string, calendarName: string, baseUrl: string, etags: Map<string, string>): Event[] {
+export function parseEvents(
+  text: string,
+  calendarName: string,
+  baseUrl: string,
+  etags: Map<string, string>,
+): Event[] {
   const parsed = parseIcal(text);
   const events: Event[] = [];
 

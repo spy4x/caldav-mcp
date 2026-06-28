@@ -1,6 +1,6 @@
 // ── iCal parser/generator tests ──
 
-import { buildTodoIcal, buildEventIcal, parseIcal } from './ical.ts';
+import { buildEventIcal, buildTodoIcal, parseIcal } from './ical.ts';
 import { assertEquals } from 'std/assert/mod.ts';
 
 Deno.test('buildTodoIcal — produces valid iCal', () => {

@@ -12,8 +12,14 @@ export function registerEventTools(mcp: McpHandler, engine: QueryEngine): void {
         type: 'object',
         properties: {
           calendarUrl: { type: 'string', description: 'Optional: filter by calendar URL' },
-          dateFrom: { type: 'string', description: 'ISO date — return events starting on or after this' },
-          dateTo: { type: 'string', description: 'ISO date — return events starting on or before this' },
+          dateFrom: {
+            type: 'string',
+            description: 'ISO date — return events starting on or after this',
+          },
+          dateTo: {
+            type: 'string',
+            description: 'ISO date — return events starting on or before this',
+          },
           text: { type: 'string', description: 'Search text in summary/description' },
         },
       },

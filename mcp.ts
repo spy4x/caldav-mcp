@@ -70,7 +70,10 @@ export class McpHandler {
         }
 
         case 'tools/call': {
-          const { name, arguments: args } = params as { name?: string; arguments?: Record<string, unknown> };
+          const { name, arguments: args } = params as {
+            name?: string;
+            arguments?: Record<string, unknown>;
+          };
           if (!name) {
             return error(id, -32602, 'Missing tool name');
           }

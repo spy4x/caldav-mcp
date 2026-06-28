@@ -2,7 +2,13 @@
 // Direct HTTP calls — no tsdav or third-party CalDAV libs.
 
 import type { Env } from '../env.ts';
-import { propfindCalendars, propfindCalendarHomeSet, reportTodos, reportEvents, mkcalendar } from './xml.ts';
+import {
+  mkcalendar,
+  propfindCalendarHomeSet,
+  propfindCalendars,
+  reportEvents,
+  reportTodos,
+} from './xml.ts';
 import type { Calendar } from './types.ts';
 import { ComponentType } from './types.ts';
 
@@ -296,7 +302,9 @@ function parsePropfindResponse(xml: string, baseUrl: string): Calendar[] {
       else if (name === 'VJOURNAL') components.push(ComponentType.VJOURNAL);
     }
 
-    const fullUrl = href.startsWith('http') ? href : `${baseUrl}${href.startsWith('/') ? href : '/' + href}`;
+    const fullUrl = href.startsWith('http')
+      ? href
+      : `${baseUrl}${href.startsWith('/') ? href : '/' + href}`;
 
     calendars.push({
       url: fullUrl,
@@ -320,5 +328,3 @@ function extractTagFlex(xml: string, tagName: string): string | undefined {
   const match = xml.match(regex);
   return match ? match[1]!.trim() : undefined;
 }
-
-

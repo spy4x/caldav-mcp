@@ -61,7 +61,9 @@ export function reportTodos(
   // CalDAV REPORT doesn't support numeric range text-match properly
 
   const compFilter = filters.length > 0
-    ? `<C:comp-filter name="VCALENDAR"><C:comp-filter name="VTODO">${filters.join('')}</C:comp-filter></C:comp-filter>`
+    ? `<C:comp-filter name="VCALENDAR"><C:comp-filter name="VTODO">${
+      filters.join('')
+    }</C:comp-filter></C:comp-filter>`
     : `<C:comp-filter name="VCALENDAR"><C:comp-filter name="VTODO"/></C:comp-filter>`;
 
   return `${XML_PROLOG}
@@ -100,7 +102,9 @@ export function reportEvents(
   }
 
   const compFilter = filters.length > 0
-    ? `<C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT">${filters.join('')}</C:comp-filter></C:comp-filter>`
+    ? `<C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT">${
+      filters.join('')
+    }</C:comp-filter></C:comp-filter>`
     : `<C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT"/></C:comp-filter>`;
 
   return `${XML_PROLOG}
@@ -123,9 +127,7 @@ export function mkcalendar(
   color?: string,
   description?: string,
 ): string {
-  const compSet = components.map((c) =>
-    `<C:comp name="${c}"/>`
-  ).join('');
+  const compSet = components.map((c) => `<C:comp name="${c}"/>`).join('');
 
   return `${XML_PROLOG}
 <C:mkcalendar xmlns:D="DAV:"
@@ -152,7 +154,13 @@ export function proppatchCalendar(
 ): string {
   const props: string[] = [];
   if (displayName) props.push(`<D:displayname>${escapeXml(displayName)}</D:displayname>`);
-  if (color) props.push(`<CS:calendar-color xmlns:CS="http://calendarserver.org/ns/">${escapeXml(color)}</CS:calendar-color>`);
+  if (color) {
+    props.push(
+      `<CS:calendar-color xmlns:CS="http://calendarserver.org/ns/">${
+        escapeXml(color)
+      }</CS:calendar-color>`,
+    );
+  }
   if (description) props.push(`<D:description>${escapeXml(description)}</D:description>`);
 
   return `${XML_PROLOG}
