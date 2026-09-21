@@ -330,7 +330,9 @@ function parsePropfindResponse(xml: string, baseUrl: string): Calendar[] {
     calendars.push({
       url: fullUrl,
       displayName,
-      components: components.length > 0 || hadCompSet ? components : [ComponentType.VEVENT, ComponentType.VTODO],
+      components: components.length > 0 || hadCompSet
+        ? components
+        : [ComponentType.VEVENT, ComponentType.VTODO],
       color: color || undefined,
       description: description || undefined,
       ctag: ctag || undefined,
