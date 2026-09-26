@@ -2,7 +2,7 @@
 
 # caldav-mcp
 
-**Let your AI assistant read and manage your calendar and tasks on any CalDAV server.**
+**Let your AI assistant read and manage your calendar and tasks on your own CalDAV server.**
 
 [![CI](https://ci.antonshubin.com/api/badges/6/status.svg)](https://ci.antonshubin.com/repos/6)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -18,8 +18,9 @@
 caldav-mcp is a [Model Context Protocol](https://modelcontextprotocol.io/) server. Connect it to
 Claude Desktop, OpenCode, Cursor, OpenWebUI or any other MCP client, and your assistant can list
 your calendars, find events and tasks, and create, update or delete them on your own CalDAV
-server. The picture above is a real exchange with a local Radicale server; the assistant's side is
-the calls it makes, and every response is what caldav-mcp returned.
+server. The request in the picture is an example. The four tool calls were sent by hand, the way an
+assistant would make them, and every response is what caldav-mcp returned from a local Radicale
+server.
 
 I wrote it because the CalDAV MCP servers I tried hid tasks, could not search across calendars,
 and pulled in a large npm install. I run it on my own homelab next to my calendar server.
@@ -32,8 +33,8 @@ and pulled in a large npm install. I run it on my own homelab next to my calenda
   overdue?" is one request, not one per calendar.
 - **Answers an assistant can use.** Queries return totals, counts by status and priority and the
   number of overdue tasks next to the list, capped at 200 items with a `truncated` flag.
-- **Zero dependencies.** Built on web standards (Fetch, Streams, ES modules) and nothing else at
-  runtime: no npm install, no `node_modules`.
+- **No third-party dependencies.** Built on Deno and web standards (Fetch, Streams, ES modules):
+  no npm install, no `node_modules`.
 - **One binary.** Deno compiles it into a single executable, or runs it straight from a pinned
   URL. Docker and systemd setups are in [self-hosting.md](docs/self-hosting.md).
 - **Local or remote.** stdio for desktop clients, or HTTP with a bearer token for OpenWebUI and
