@@ -11,6 +11,7 @@ services:
       - CALDAV_USERNAME=${CALDAV_USERNAME}
       - CALDAV_PASSWORD=${CALDAV_PASSWORD}
       - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN}
+      - HOST=0.0.0.0
       - LOG_LEVEL=info
     mem_limit: 128M
     cpus: 0.25

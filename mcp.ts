@@ -6,7 +6,8 @@ import type { ToolDefinition, ToolHandler } from './tools/index.ts';
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
-  id: string | number;
+  /** Absent on a notification, which never gets a response. */
+  id?: string | number;
   method: string;
   params?: Record<string, unknown>;
 }
@@ -25,6 +26,9 @@ export interface McpServerInfo {
   version: string;
 }
 
+/** Protocol versions this server speaks, newest first. */
+export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
+
 export class McpHandler {
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }>;
   private initialized = false;
@@ -39,65 +43,66 @@ export class McpHandler {
     this.tools.set(definition.name, { definition, handler });
   }
 
-  /** Process a single JSON-RPC request → response */
-  async handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse> {
-    const { id, method, params } = req;
+  /**
+   * Process one JSON-RPC message. Returns `null` for a notification (no `id`), which per
+   * JSON-RPC 2.0 must never be answered, not even with an error.
+   */
+  async handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+    const isNotification = req.id === undefined;
+    const id = req.id ?? null;
+    if (typeof req.method !== 'string' || (!isNotification && !isValidId(req.id))) {
+      return isNotification ? null : error(null, -32600, 'Invalid Request');
+    }
+    if (isNotification) {
+      if (req.method === 'notifications/initialized') this.initialized = true;
+      return null;
+    }
 
+    const params = req.params ?? {};
     try {
-      switch (method) {
+      switch (req.method) {
         case 'initialize': {
-          this.initialized = true;
+          const requested = params.protocolVersion;
+          const protocolVersion = typeof requested === 'string' &&
+              SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+            ? requested
+            : SUPPORTED_PROTOCOL_VERSIONS[0];
           return {
             jsonrpc: '2.0',
             id,
             result: {
-              protocolVersion: '2024-11-05',
-              capabilities: {
-                tools: {},
-              },
+              protocolVersion,
+              capabilities: { tools: {} },
               serverInfo: this.serverInfo,
             },
           };
         }
 
+        case 'ping':
+          return { jsonrpc: '2.0', id, result: {} };
+
         case 'tools/list': {
           const toolList = Array.from(this.tools.values()).map((t) => t.definition);
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: { tools: toolList },
-          };
+          return { jsonrpc: '2.0', id, result: { tools: toolList } };
         }
 
         case 'tools/call': {
           const { name, arguments: args } = params as {
-            name?: string;
+            name?: unknown;
             arguments?: Record<string, unknown>;
           };
-          if (!name) {
+          if (typeof name !== 'string' || !name) {
             return error(id, -32602, 'Missing tool name');
           }
-
           const tool = this.tools.get(name);
           if (!tool) {
             return error(id, -32602, `Unknown tool: ${name}`);
           }
-
-          const result = await tool.handler(args || {});
-          return {
-            jsonrpc: '2.0',
-            id,
-            result: { content: [{ type: 'text', text: JSON.stringify(result) }] },
-          };
-        }
-
-        case 'notifications/initialized': {
-          // No-op, client confirmed init
-          return { jsonrpc: '2.0', id: null, result: null };
+          return { jsonrpc: '2.0', id, result: await callTool(tool.handler, args ?? {}) };
         }
 
         default:
-          return error(id, -32601, `Method not found: ${method}`);
+          return error(id, -32601, `Method not found: ${req.method}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -105,25 +110,55 @@ export class McpHandler {
     }
   }
 
-  /** Process a string JSON-RPC message */
+  /** Parse and process one JSON-RPC message string. Returns `null` when nothing is to be sent. */
   async handleMessage(message: string): Promise<JsonRpcResponse | null> {
+    let req: unknown;
     try {
-      const req: JsonRpcRequest = JSON.parse(message);
-      return await this.handleRequest(req);
-    } catch (_err) {
-      // Parse error
-      return {
-        jsonrpc: '2.0',
-        id: null,
-        error: { code: -32700, message: 'Parse error' },
-      };
+      req = JSON.parse(message);
+    } catch {
+      return error(null, -32700, 'Parse error');
     }
+    // Batches were removed in protocol 2025-06-18; a non-object is not a request.
+    if (typeof req !== 'object' || req === null || Array.isArray(req)) {
+      return error(null, -32600, 'Invalid Request');
+    }
+    return await this.handleRequest(req as JsonRpcRequest);
   }
 
-  /** Check if initialized */
+  /** True once the client has sent `notifications/initialized`. */
   isInitialized(): boolean {
     return this.initialized;
   }
+}
+
+/**
+ * Run a tool and shape its outcome as an MCP tool result. A thrown error or a returned
+ * `{ error: string }` becomes `isError: true`, so the model sees the failure instead of the
+ * client treating it as a protocol fault or a success.
+ */
+async function callTool(
+  handler: ToolHandler,
+  args: Record<string, unknown>,
+): Promise<{ content: { type: 'text'; text: string }[]; isError?: true }> {
+  try {
+    const result = await handler(args);
+    const text = JSON.stringify(result) ?? 'null';
+    return isErrorResult(result)
+      ? { content: [{ type: 'text', text }], isError: true }
+      : { content: [{ type: 'text', text }] };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { content: [{ type: 'text', text: msg }], isError: true };
+  }
+}
+
+function isErrorResult(result: unknown): boolean {
+  return typeof result === 'object' && result !== null &&
+    typeof (result as { error?: unknown }).error === 'string';
+}
+
+function isValidId(id: unknown): id is string | number {
+  return typeof id === 'string' || typeof id === 'number';
 }
 
 function error(id: string | number | null, code: number, message: string): JsonRpcResponse {

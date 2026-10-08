@@ -4,6 +4,8 @@ export interface Env {
   caldavUrl: string;
   caldavUsername: string;
   caldavPassword: string;
+  /** Interface the HTTP transport binds to. Loopback unless `HOST` says otherwise. */
+  host: string;
   port: number;
   mcpBearerToken?: string;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
@@ -30,8 +32,9 @@ export function loadEnv(): Env {
     caldavUrl: caldavUrl.replace(/\/+$/, ''), // strip trailing slash
     caldavUsername,
     caldavPassword,
+    host: Deno.env.get('HOST') || '127.0.0.1',
     port: parseInt(Deno.env.get('PORT') || '3000', 10),
-    mcpBearerToken: Deno.env.get('MCP_BEARER_TOKEN'),
+    mcpBearerToken: Deno.env.get('MCP_BEARER_TOKEN') || undefined,
     logLevel: (Deno.env.get('LOG_LEVEL') as Env['logLevel']) || 'info',
   };
 }

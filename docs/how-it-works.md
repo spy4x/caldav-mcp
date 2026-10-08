@@ -28,7 +28,7 @@ Existing CalDAV MCP servers (like `dav-mcp`) ship as npm packages that depend on
 | **Cross-calendar search** | ❌ No | **✅ One query = all calendars** |
 | **Summarization** | ❌ Raw iCal | **✅ byStatus/byPriority/overdue** |
 | **Task relationships** | ❌ No | **✅ RELATED-TO (parent/child/sibling)** |
-| **HTTP transport** | Via mcpo proxy | **✅ Native SSE + POST** |
+| **HTTP transport** | Via mcpo proxy | **✅ Native JSON-RPC over POST** |
 | **Memory** | ~512MB | **~64MB** |
 | **License** | GPL-3.0 | **MIT** |
 
@@ -48,7 +48,7 @@ Existing CalDAV MCP servers (like `dav-mcp`) ship as npm packages that depend on
 ```
 caldav-mcp/
 ├── main.ts           # Entry: stdio + HTTP transports
-├── mcp.ts            # MCP protocol (JSON-RPC 2.0 lifecycle)
+├── mcp.ts            # MCP protocol (JSON-RPC 2.0, versions 2024-11-05 to 2025-06-18)
 ├── env.ts            # Config from environment variables
 ├── caldav/
 │   ├── client.ts     # CalDAV HTTP client (PROPFIND, REPORT, PUT, DELETE)
