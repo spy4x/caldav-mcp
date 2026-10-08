@@ -1,13 +1,14 @@
 // ── caldav-mcp: CalDAV MCP Server ──
 // Entry point. Parses args, initializes engine, starts stdio or HTTP transport.
 
-import { loadEnv } from './env.ts';
+import { type Env, loadEnv } from './env.ts';
 import { CalDavClient } from './caldav/client.ts';
 import { QueryEngine } from './caldav/query.ts';
 import { McpHandler } from './mcp.ts';
 import { registerAllTools } from './tools/index.ts';
+import { timingSafeEqual } from 'std/crypto/timing_safe_equal.ts';
 
-const VERSION = '0.1.0';
+export const VERSION = '0.1.0';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -80,55 +81,55 @@ async function startStdio(
 }
 
 // ── HTTP transport (optional, for OpenWebUI/n8n via mcpo) ──
-function startHttp(
-  mcp: McpHandler,
-  env: { port: number; mcpBearerToken?: string },
-  log: (level: string, msg: string) => void,
-): void {
-  const port = env.port;
-  log('info', `Starting HTTP transport on port ${port}...`);
 
-  // Rate limiting state
+type Log = (level: string, msg: string) => void;
+
+/**
+ * Where the HTTP transport listens. Refuses to start without `MCP_BEARER_TOKEN`, because the
+ * server holds CalDAV credentials and an open port would hand them to anyone who can reach it.
+ */
+export function httpListenOptions(
+  env: Pick<Env, 'host' | 'port' | 'mcpBearerToken'>,
+): { hostname: string; port: number; token: string } {
+  if (!env.mcpBearerToken) {
+    throw new Error('MCP_BEARER_TOKEN env var is required for HTTP mode');
+  }
+  return { hostname: env.host, port: env.port, token: env.mcpBearerToken };
+}
+
+function startHttp(mcp: McpHandler, env: Env, log: Log): void {
+  const { hostname, port, token } = httpListenOptions(env);
+  log('info', `Starting HTTP transport on ${hostname}:${port}...`);
+  Deno.serve({ hostname, port }, createHttpHandler(mcp, token, log));
+  log('info', `HTTP server listening on ${hostname}:${port}`);
+}
+
+/**
+ * Build the HTTP request handler. `/health` is open; `/mcp` needs the token as
+ * `Authorization: Bearer <token>`, a bare `Authorization: <token>` or `X-Api-Key: <token>`.
+ * Tokens in the query string are refused: URLs end up in proxy and access logs.
+ */
+export function createHttpHandler(
+  mcp: McpHandler,
+  token: string,
+  log: Log,
+): (req: Request) => Promise<Response> {
   const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
   const RATE_LIMIT = 100; // requests per minute
 
-  const handler = async (req: Request): Promise<Response> => {
+  return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
 
-    // Health check — no auth required
     if (url.pathname === '/health') {
-      return new Response(JSON.stringify({ status: 'ok', version: VERSION }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return json({ status: 'ok', version: VERSION });
     }
 
-    // Auth check (only for MCP routes)
-    // Accepts token from multiple sources:
-    //   - Authorization: Bearer <token>
-    //   - Authorization: <token>
-    //   - X-Api-Key: <token>
-    //   - ?api_key=<token>  (query param)
-    if (env.mcpBearerToken) {
-      const authHeader = req.headers.get('Authorization') || '';
-      const apiKeyHeader = req.headers.get('X-Api-Key') || '';
-      const queryToken = url.searchParams.get('api_key') || '';
-      const valid = authHeader === `Bearer ${env.mcpBearerToken}` ||
-        authHeader === env.mcpBearerToken ||
-        apiKeyHeader === env.mcpBearerToken ||
-        queryToken === env.mcpBearerToken;
-      if (!valid) {
-        log(
-          'debug',
-          `Auth failed: Authorization="${authHeader}" X-Api-Key="${apiKeyHeader}" query="${queryToken}"`,
-        );
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
+    if (!(await isAuthorized(req, token))) {
+      // Never log what the client sent: a near-miss token is still a secret.
+      log('debug', `Auth failed for ${req.method} ${url.pathname}`);
+      return json({ error: 'Unauthorized' }, 401);
     }
 
-    // Rate limiting
     const ip = req.headers.get('x-forwarded-for') || 'unknown';
     const now = Date.now();
     let rl = rateLimitMap.get(ip);
@@ -138,89 +139,51 @@ function startHttp(
     }
     rl.count++;
     if (rl.count > RATE_LIMIT) {
-      return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json', 'Retry-After': '60' },
-      });
+      return json({ error: 'Rate limit exceeded' }, 429, { 'Retry-After': '60' });
     }
 
-    // Routes
-    if (url.pathname === '/mcp' && req.method === 'POST') {
-      return await handleMcpPost(req, mcp);
+    if (url.pathname === '/mcp') {
+      if (req.method === 'POST') return await handleMcpPost(req, mcp);
+      return json({ error: 'Method not allowed' }, 405, { 'Allow': 'POST' });
     }
 
-    // SSE endpoint for MCP-over-SSE
-    if (url.pathname === '/mcp' && req.method === 'GET') {
-      return handleMcpSse(req, mcp);
-    }
-
-    return new Response(JSON.stringify({ error: 'Not found' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return json({ error: 'Not found' }, 404);
   };
+}
 
-  Deno.serve({ port }, handler);
-  log('info', `HTTP server listening on :${port}`);
+async function isAuthorized(req: Request, token: string): Promise<boolean> {
+  const auth = req.headers.get('Authorization');
+  const candidates = [
+    auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : auth,
+    req.headers.get('X-Api-Key'),
+  ];
+  for (const candidate of candidates) {
+    if (candidate && await tokensEqual(candidate, token)) return true;
+  }
+  return false;
+}
+
+/** Compare SHA-256 digests in constant time, so neither content nor length leaks by timing. */
+async function tokensEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [da, db] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)),
+    crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  return timingSafeEqual(da, db);
 }
 
 async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
-  try {
-    const body = await req.text();
-    const response = await mcp.handleMessage(body);
-    return new Response(JSON.stringify(response), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (_err) {
-    return new Response(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: null,
-        error: { code: -32700, message: 'Parse error' },
-      }),
-      {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      },
-    );
-  }
+  const response = await mcp.handleMessage(await req.text());
+  // A notification has no response: acknowledge it without a body.
+  if (!response) return new Response(null, { status: 202 });
+  return json(response);
 }
 
-function handleMcpSse(_req: Request, _mcp: McpHandler): Response {
-  // MCP SSE transport: tells OpenWebUI where to POST JSON-RPC messages.
-  // The POST handler at /mcp returns JSON-RPC responses directly.
-  // Using ReadableStream with immediate flushing for Deno.serve compatibility.
-  let resolveStart: (() => void) | undefined;
-  const startPromise = new Promise<void>((r) => {
-    resolveStart = r;
-  });
-
-  const body = new ReadableStream({
-    start(controller) {
-      const encoder = new TextEncoder();
-      // Flush endpoint event immediately
-      controller.enqueue(encoder.encode('event: endpoint\ndata: /mcp\n\n'));
-      resolveStart?.();
-    },
-    cancel() {
-      // Client disconnected
-    },
-  });
-
-  // Ensure the stream starts immediately by awaiting the start promise
-  // This forces Deno.serve to begin streaming the response
-  (async () => {
-    await startPromise;
-  })();
-
-  return new Response(body, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-    },
+function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
