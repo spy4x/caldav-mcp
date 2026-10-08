@@ -7,7 +7,7 @@ Designed for homelab deployments. Compatible with Radicale, Baïkal, Xandikos, a
 ```bash
 deno compile -A --output caldav-mcp https://raw.githubusercontent.com/spy4x/caldav-mcp/b249b6426f1a556ef4dada1292e3b5bf8d94d09a/main.ts
 ./caldav-mcp                 # stdio (for MCP clients)
-./caldav-mcp --http          # HTTP on :3000 (for OpenWebUI)
+./caldav-mcp --http          # HTTP on 127.0.0.1:3000; needs MCP_BEARER_TOKEN, set HOST to listen elsewhere
 ```
 
 ## Docker
@@ -56,6 +56,7 @@ Environment=CALDAV_URL=http://localhost:5232
 Environment=CALDAV_USERNAME=user
 Environment=CALDAV_PASSWORD=pass
 Environment=PORT=3000
+Environment=MCP_BEARER_TOKEN=<token>
 Restart=always
 MemoryMax=64M
 CPUQuota=10%

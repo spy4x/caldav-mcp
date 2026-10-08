@@ -61,10 +61,11 @@ Deno.test('a failed login never logs the token the client sent', async () => {
   assertEquals(logs.some((line) => line.includes(sent)), false);
 });
 
-Deno.test('the token is accepted as a Bearer header or an X-Api-Key header', async () => {
+Deno.test('the token is accepted as a Bearer header, a bare Authorization header or an X-Api-Key header', async () => {
   const { handler } = setup();
   const variants: Record<string, string>[] = [
     { 'Authorization': `Bearer ${TOKEN}` },
+    { 'Authorization': TOKEN },
     { 'X-Api-Key': TOKEN },
   ];
   for (const headers of variants) {
