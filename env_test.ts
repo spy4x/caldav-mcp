@@ -94,7 +94,12 @@ Deno.test('OAuth is on when all three of its env vars are set', () => {
     publicUrl: 'https://mcp.example.com',
     ownerPasswordHash: OAUTH.OWNER_PASSWORD_HASH,
     authPepper: OAUTH.AUTH_PEPPER,
+    kvPath: '/data/oauth.kv',
   });
+});
+
+Deno.test('OAUTH_KV_PATH moves the OAuth store', () => {
+  assertEquals(load({ ...OAUTH, OAUTH_KV_PATH: '/srv/oauth.kv' }).oauth?.kvPath, '/srv/oauth.kv');
 });
 
 Deno.test('a half-configured OAuth stops startup, naming each missing variable', () => {

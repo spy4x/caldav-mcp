@@ -11,11 +11,14 @@
   // Our own @spy4x/* releases resolve at once; everything else waits a day (supply-chain guard).
   "minimumDependencyAge": { "age": "1440", "exclude": ["jsr:@spy4x/*"] },
   "tasks": {
-    "start": "deno run -A main.ts",
-    "dev": "deno run --watch -A main.ts",
-    "test": "deno test -A",
-    "compile": "deno compile -A --target x86_64-unknown-linux-gnu --output caldav-mcp main.ts",
-    "check": "deno lint && deno fmt --check && deno check main.ts"
+    // --unstable-kv: the OAuth store is Deno KV (Deno.openKv).
+    "start": "deno run -A --unstable-kv main.ts",
+    "dev": "deno run --watch -A --unstable-kv main.ts",
+    "test": "deno test -A --unstable-kv",
+    "compile": "deno compile -A --unstable-kv --target x86_64-unknown-linux-gnu --output caldav-mcp main.ts",
+    "check": "deno lint && deno fmt --check && deno check --unstable-kv main.ts",
+    // Prints the OWNER_PASSWORD_HASH for a password read from stdin; needs AUTH_PEPPER set.
+    "password:hash": "deno run --allow-env=AUTH_PEPPER @spy4x/server/sign-in/password-hash"
   },
   "compilerOptions": {
     "strict": true,

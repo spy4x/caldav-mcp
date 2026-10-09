@@ -2,7 +2,7 @@
 
 import { type EnvReader, readEnvVar, systemEnv } from '@spy4x/server/config/env';
 import { ipInRanges } from '@spy4x/net/ip';
-import type { OAuthConfig } from './oauth.ts';
+import { DEFAULT_OAUTH_KV_PATH, type OAuthConfig } from './oauth.ts';
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
@@ -25,7 +25,10 @@ export interface Env {
   oauth?: OAuthConfig;
 }
 
-/** The variables that switch OAuth on. Set all three or none. */
+/**
+ * The variables that switch OAuth on. Set all three or none. `OAUTH_KV_PATH` is optional and
+ * defaults to {@link DEFAULT_OAUTH_KV_PATH}.
+ */
 export const OAUTH_ENV_VARS = ['PUBLIC_URL', 'OWNER_PASSWORD_HASH', 'AUTH_PEPPER'] as const;
 
 /** The format `createPasswordHasher().hash()` returns. */
@@ -83,6 +86,7 @@ function parseOAuth(optional: (name: string) => string): OAuthConfig | undefined
     publicUrl: parsePublicUrl(publicUrl),
     ownerPasswordHash: parsePasswordHash(ownerPasswordHash),
     authPepper: parsePepper(authPepper),
+    kvPath: optional('OAUTH_KV_PATH') || DEFAULT_OAUTH_KV_PATH,
   };
 }
 

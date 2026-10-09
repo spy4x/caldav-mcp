@@ -1,13 +1,13 @@
 // ── OAuth tests: the remote-connector flow, in process, against the fake CalDAV server ──
 
-import { AUTH_FAILURE_LIMIT, CONSENT_PAGE_LIMIT, createHttpHandler } from './main.ts';
+import { CONSENT_PAGE_LIMIT, createHttpHandler } from './main.ts';
 import { McpHandler } from './mcp.ts';
-import { createOAuth, OWNER_PASSWORD_FIELD } from './oauth.ts';
+import { createOAuth, type OpenedOAuthStore, openOAuthStore } from './oauth.ts';
 import { registerAllTools } from './tools/index.ts';
 import { setup as caldavSetup } from './caldav/testing/fixtures.ts';
-import { assert, assertEquals, assertMatch } from 'std/assert/mod.ts';
+import { assert, assertEquals, assertMatch, assertRejects } from 'std/assert/mod.ts';
 import { encodeBase64Url } from 'std/encoding/base64url.ts';
-import { CLAUDE_REDIRECT_URI } from '@spy4x/server/mcp-oauth';
+import { CLAUDE_REDIRECT_URI, OWNER_PASSWORD_FIELD } from '@spy4x/server/mcp-oauth';
 import type { Fetcher } from '@spy4x/net/safe-fetch';
 import type { DnsResolver } from '@spy4x/net/url-policy';
 import { createPasswordHasher } from '@spy4x/server/sign-in';
@@ -51,21 +51,26 @@ function fakeNetwork(): { fetcher: Fetcher; resolver: DnsResolver; calls: string
   };
 }
 
-/** A handler with OAuth and the static token on, the real tools, and the fake CalDAV server. */
-async function setup() {
+// The minimum iteration count keeps each password check fast.
+const OWNER_HASH = await createPasswordHasher({ pepper: PEPPER, iterations: 100_000 })
+  .hash(OWNER_PASSWORD);
+
+/**
+ * A handler with OAuth and the static token on, the real tools and the fake CalDAV server. The
+ * OAuth store is an in-memory Deno KV unless `kvPath` names a file. Dispose of it to close the KV.
+ */
+async function setup(kvPath = ':memory:') {
   const network = fakeNetwork();
-  // The minimum iteration count keeps each password check fast.
-  const hash = await createPasswordHasher({ pepper: PEPPER, iterations: 100_000 })
-    .hash(OWNER_PASSWORD);
+  const opened: OpenedOAuthStore = await openOAuthStore(kvPath);
   const oauth = createOAuth(
-    { publicUrl: ORIGIN, ownerPasswordHash: hash, authPepper: PEPPER },
-    { fetcher: network.fetcher, resolver: network.resolver },
+    { publicUrl: ORIGIN, ownerPasswordHash: OWNER_HASH, authPepper: PEPPER, kvPath },
+    { store: opened.store, fetcher: network.fetcher, resolver: network.resolver },
   );
   const mcp = new McpHandler({ name: 'test', version: '0.0.0' });
   registerAllTools(mcp, caldavSetup().engine);
   const logs: string[] = [];
   const handler = createHttpHandler(mcp, STATIC_TOKEN, (_level, msg) => logs.push(msg), { oauth });
-  return { handler, logs, calls: network.calls };
+  return { handler, logs, calls: network.calls, [Symbol.dispose]: opened.close };
 }
 
 type Handler = Awaited<ReturnType<typeof setup>>['handler'];
@@ -127,7 +132,8 @@ async function openConsent(handler: Handler, challenge: string) {
 const PING = { jsonrpc: '2.0', id: 1, method: 'ping' };
 
 Deno.test('an MCP request without a token gets 401 pointing at the resource metadata', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const res = await handler(rpc(PING));
   await res.body?.cancel();
   assertEquals(res.status, 401);
@@ -135,7 +141,8 @@ Deno.test('an MCP request without a token gets 401 pointing at the resource meta
 });
 
 Deno.test('an MCP request with an unknown token gets 401 with invalid_token', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const res = await handler(rpc(PING, { 'Authorization': 'Bearer not-a-real-token' }));
   await res.body?.cancel();
   assertEquals(res.status, 401);
@@ -146,7 +153,8 @@ Deno.test('an MCP request with an unknown token gets 401 with invalid_token', as
 });
 
 Deno.test('the metadata documents name this server as resource and as authorization server', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const resource = await handler(new Request(METADATA_URL));
   assertEquals(resource.status, 200);
   assertEquals(await resource.json(), {
@@ -164,7 +172,8 @@ Deno.test('the metadata documents name this server as resource and as authorizat
 });
 
 Deno.test('a full code flow with PKCE and the owner password ends in a tool list and a CalDAV call', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const { verifier, challenge } = await pkce();
 
   const { html, consentId } = await openConsent(handler, challenge);
@@ -212,7 +221,8 @@ Deno.test('a full code flow with PKCE and the owner password ends in a tool list
 });
 
 Deno.test('a redirect URI outside the allowlist is refused before the consent page', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const { challenge } = await pkce();
   const res = await handler(new Request(authorizeUrl(challenge, EVIL_REDIRECT)));
   const body = await res.text();
@@ -221,19 +231,20 @@ Deno.test('a redirect URI outside the allowlist is refused before the consent pa
   assertEquals(body.includes('consent_id'), false);
 });
 
-Deno.test('a wrong owner password at consent gets 403 and no code; the right one then works', async () => {
-  const { handler, logs } = await setup();
+Deno.test('a wrong or missing owner password at consent shows the page again and gives no code', async () => {
+  using ctx = await setup();
+  const { handler, logs } = ctx;
   const { challenge } = await pkce();
   const { consentId } = await openConsent(handler, challenge);
   const fields = { consent_id: consentId, decision: 'approve' };
 
-  for (const password of ['wrong-password', '']) {
+  for (const [password, status] of [['wrong-password', 403], ['', 400]] as const) {
     const refused = await handler(
       form('/authorize', { ...fields, [OWNER_PASSWORD_FIELD]: password }),
     );
-    await refused.body?.cancel();
-    assertEquals(refused.status, 403);
+    assertEquals(refused.status, status);
     assertEquals(refused.headers.get('Location'), null);
+    assert((await refused.text()).includes(`name="${OWNER_PASSWORD_FIELD}"`), 'page shown again');
   }
   assertEquals(logs.some((line) => line.includes('wrong-password')), false);
 
@@ -246,7 +257,8 @@ Deno.test('a wrong owner password at consent gets 403 and no code; the right one
 });
 
 Deno.test('denying consent needs no password and sends the client access_denied', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const { challenge } = await pkce();
   const { consentId } = await openConsent(handler, challenge);
   const res = await handler(form('/authorize', { consent_id: consentId, decision: 'deny' }));
@@ -257,25 +269,33 @@ Deno.test('denying consent needs no password and sends the client access_denied'
   assertEquals(location.searchParams.has('code'), false);
 });
 
-Deno.test('wrong owner passwords count toward the failed-login limit', async () => {
-  const { handler } = await setup();
+Deno.test('after 10 wrong owner passwords from any addresses, approvals get 429 even with the right one', async () => {
+  using ctx = await setup();
+  const { handler } = ctx;
   const { challenge } = await pkce();
   const { consentId } = await openConsent(handler, challenge);
   const wrong = { consent_id: consentId, decision: 'approve', [OWNER_PASSWORD_FIELD]: 'nope' };
-  for (let i = 0; i < AUTH_FAILURE_LIMIT; i++) {
-    const res = await handler(form('/authorize', wrong));
+  // Each guess from its own address, so no per-address limit is what stops them.
+  const from = (i: number) => ({
+    remoteAddr: { transport: 'tcp' as const, hostname: `203.0.113.${i + 1}`, port: 40000 },
+  });
+  for (let i = 0; i < 10; i++) {
+    const res = await handler(form('/authorize', wrong), from(i));
     await res.body?.cancel();
     assertEquals(res.status, 403);
   }
   const blocked = await handler(
     form('/authorize', { ...wrong, [OWNER_PASSWORD_FIELD]: OWNER_PASSWORD }),
+    from(10),
   );
   await blocked.body?.cancel();
   assertEquals(blocked.status, 429);
+  assert(blocked.headers.has('Retry-After'));
 });
 
 Deno.test('the static MCP_BEARER_TOKEN still works with OAuth on', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const variants: Record<string, string>[] = [
     { 'Authorization': `Bearer ${STATIC_TOKEN}` },
     { 'X-Api-Key': STATIC_TOKEN },
@@ -288,7 +308,8 @@ Deno.test('the static MCP_BEARER_TOKEN still works with OAuth on', async () => {
 });
 
 Deno.test('a client_id outside claude.ai gets 400 and nothing is fetched', async () => {
-  const { handler, calls } = await setup();
+  using ctx = await setup();
+  const { handler, calls } = ctx;
   const { challenge } = await pkce();
   const url = authorizeUrl(challenge, CLAUDE_REDIRECT_URI, 'https://attacker.example/client');
   const res = await handler(new Request(url));
@@ -299,7 +320,8 @@ Deno.test('a client_id outside claude.ai gets 400 and nothing is fetched', async
 });
 
 Deno.test('opening consent pages is limited per client, tighter than other requests', async () => {
-  const { handler } = await setup();
+  using ctx = await setup();
+  const { handler } = ctx;
   const { challenge } = await pkce();
   for (let i = 0; i < CONSENT_PAGE_LIMIT; i++) {
     const res = await handler(new Request(authorizeUrl(challenge)));
@@ -314,4 +336,56 @@ Deno.test('opening consent pages is limited per client, tighter than other reque
   const ping = await handler(rpc(PING, { 'Authorization': `Bearer ${STATIC_TOKEN}` }));
   await ping.body?.cancel();
   assertEquals(ping.status, 200);
+});
+
+/** Sign in through consent and the token endpoint; returns the access token. */
+async function signIn(handler: Handler): Promise<string> {
+  const { verifier, challenge } = await pkce();
+  const { consentId } = await openConsent(handler, challenge);
+  const approved = await handler(form('/authorize', {
+    consent_id: consentId,
+    decision: 'approve',
+    [OWNER_PASSWORD_FIELD]: OWNER_PASSWORD,
+  }));
+  await approved.body?.cancel();
+  const code = new URL(approved.headers.get('Location')!).searchParams.get('code');
+  assert(code, 'the redirect carries a code');
+  const res = await handler(form('/token', {
+    grant_type: 'authorization_code',
+    code,
+    code_verifier: verifier,
+    redirect_uri: CLAUDE_REDIRECT_URI,
+    client_id: CLIENT_ID,
+    resource: RESOURCE,
+  }));
+  assertEquals(res.status, 200);
+  return (await res.json()).access_token;
+}
+
+Deno.test('a token issued before a restart still works after it', async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const kvPath = `${dir}/oauth.kv`;
+    let token: string;
+    {
+      using before = await setup(kvPath);
+      token = await signIn(before.handler);
+    }
+    using after = await setup(kvPath);
+    const res = await after.handler(rpc(PING, { 'Authorization': `Bearer ${token}` }));
+    assertEquals(res.status, 200);
+    assertEquals(await res.json(), { jsonrpc: '2.0', id: 1, result: {} });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test('an OAuth store path that cannot be opened stops startup, naming the path', async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const path = `${dir}/missing-directory/oauth.kv`;
+    await assertRejects(() => openOAuthStore(path), Error, `${path} (OAUTH_KV_PATH)`);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });

@@ -5,7 +5,7 @@ import { type Env, loadEnv } from './env.ts';
 import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
 import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
-import { createOAuth, MCP_PATH, type OAuth } from './oauth.ts';
+import { createOAuth, MCP_PATH, type OAuth, openOAuthStore } from './oauth.ts';
 import { AUTHORIZE_PATH } from '@spy4x/server/mcp-oauth';
 import { registerAllTools } from './tools/index.ts';
 import {
@@ -123,7 +123,7 @@ const RATE_LIMIT = 100;
 export const AUTH_FAILURE_LIMIT = 10;
 /**
  * Consent pages each client may open per minute. Each one may fetch the client's metadata document
- * and keeps a pending consent in memory, so it gets a tighter budget than other requests.
+ * and stores a pending consent, so it gets a tighter budget than other requests.
  */
 export const CONSENT_PAGE_LIMIT = 10;
 /** Most clients the limiter tracks at once, so a flood of addresses cannot grow memory unbounded. */
@@ -144,11 +144,14 @@ export function httpListenOptions(
   return { hostname: env.host, port: env.port, token: env.mcpBearerToken };
 }
 
-function startHttp(mcp: McpHandler, env: Env, log: Log): void {
+async function startHttp(mcp: McpHandler, env: Env, log: Log): Promise<void> {
   const { hostname, port, token } = httpListenOptions(env);
-  const oauth = env.oauth ? createOAuth(env.oauth) : undefined;
+  // Opened for the life of the process; a database that cannot be opened stops the start.
+  const oauth = env.oauth
+    ? createOAuth(env.oauth, { store: (await openOAuthStore(env.oauth.kvPath)).store })
+    : undefined;
   log('info', `Starting HTTP transport on ${hostname}:${port}...`);
-  if (oauth) log('info', `OAuth on for ${oauth.resource}; a restart signs connectors out`);
+  if (oauth) log('info', `OAuth on for ${oauth.resource}; tokens kept in ${env.oauth?.kvPath}`);
   Deno.serve(
     { hostname, port },
     createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies, oauth }),
@@ -169,9 +172,9 @@ interface PeerInfo {
  * `WWW-Authenticate` pointing at the protected resource metadata, and the OAuth routes are open.
  *
  * Clients are rate limited per IP address: the peer address, or the first `X-Forwarded-For` hop
- * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens or
- * refused consents a minute, checked before the token comparison, and `RATE_LIMIT` requests a
- * minute.
+ * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
+ * minute, checked before the token comparison, `CONSENT_PAGE_LIMIT` consent pages a minute, and
+ * `RATE_LIMIT` requests a minute.
  */
 export function createHttpHandler(
   mcp: McpHandler,
@@ -202,19 +205,13 @@ export function createHttpHandler(
     if (oauth?.handles(url.pathname)) {
       const decision = limiter.check(client);
       if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
-      if (url.pathname !== AUTHORIZE_PATH) return await oauth.fetch(req);
-      if (req.method !== 'POST') {
+      // Opening a consent page may fetch a client document and stores a pending consent. Wrong
+      // owner passwords on its submission are capped by the library, for the whole server.
+      if (url.pathname === AUTHORIZE_PATH && req.method === 'GET') {
         const page = consentPages.check(client);
         if (!page.allowed) return tooManyRequests(page.retryAfterMs);
-        return await oauth.fetch(req);
       }
-      // A consent submission carries the owner password: a refusal counts as a failed login.
-      const attempt = authFailures.check(client);
-      if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
-      const res = await oauth.fetch(req);
-      if (res.status === 403) log('debug', 'Consent refused');
-      else authFailures.refund(client, attempt.at);
-      return res;
+      return await oauth.fetch(req);
     }
 
     // Reserve, verify and refund with no await between them for the static token, so parallel

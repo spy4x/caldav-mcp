@@ -44,7 +44,12 @@ Deno.test('HTTP mode refuses to start without MCP_BEARER_TOKEN', () => {
 });
 
 Deno.test('HTTP mode starts with OAuth alone, without MCP_BEARER_TOKEN', () => {
-  const oauth = { publicUrl: 'https://mcp.example.com', ownerPasswordHash: 'h', authPepper: 'p' };
+  const oauth = {
+    publicUrl: 'https://mcp.example.com',
+    ownerPasswordHash: 'h',
+    authPepper: 'p',
+    kvPath: '/data/oauth.kv',
+  };
   assertEquals(httpListenOptions({ host: '127.0.0.1', port: 3000, oauth }), {
     hostname: '127.0.0.1',
     port: 3000,
@@ -201,6 +206,7 @@ Deno.test('log lines never contain the owner password hash or the pepper', () =>
     publicUrl: 'https://mcp.example.com',
     ownerPasswordHash: 'hash-secret-value',
     authPepper: 'pepper-secret-value',
+    kvPath: '/data/oauth.kv',
   };
   const log = createLogger(
     { logLevel: 'debug', caldavPassword: 'caldav-secret', oauth },

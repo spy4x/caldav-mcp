@@ -1,6 +1,7 @@
 // ── OAuth for remote connectors (claude.ai, the Claude apps, Claude Code) ──
-// The authorization server and the resource-server guard come from @spy4x/server/mcp-oauth; this
-// module wires them to one owner password and to plain `Request`/`Response` handlers.
+// The authorization server, its Deno KV store and the resource-server guard come from
+// @spy4x/server/mcp-oauth; this module wires them to one owner password and to plain
+// `Request`/`Response` handlers.
 
 import { Hono } from 'hono';
 import {
@@ -9,31 +10,19 @@ import {
   createAuthorizationServer,
   createClientMetadataFetcher,
   createResourceServer,
-  defaultConsentPage,
   type OAuthStore,
   TOKEN_PATH,
 } from '@spy4x/server/mcp-oauth';
-import { MemoryOAuthStore } from '@spy4x/server/mcp-oauth/memory-store';
+import { KvOAuthStore } from '@spy4x/server/mcp-oauth/kv-store';
 import { createPasswordHasher } from '@spy4x/server/sign-in';
-import { parseBoundedFormData } from '@spy4x/net/bounded-body';
 import type { Fetcher } from '@spy4x/net/safe-fetch';
 import type { DnsResolver } from '@spy4x/net/url-policy';
 
 /** The path the MCP endpoint is served at; the OAuth resource is `PUBLIC_URL` plus this path. */
 export const MCP_PATH = '/mcp';
 
-/** Name of the password field the consent page adds to the library's default page. */
-export const OWNER_PASSWORD_FIELD = 'owner_password';
-
-/** The consent form is small; anything larger is refused before the password is read. */
-const MAX_CONSENT_BODY_BYTES = 4 * 1024;
-
-/** The approve button of the library's default consent page; the password field goes before it. */
-const APPROVE_BUTTON = '<button type="submit" name="decision" value="approve">';
-
-const PASSWORD_INPUT =
-  `<p><label>Owner password <input type="password" name="${OWNER_PASSWORD_FIELD}" ` +
-  `autocomplete="current-password"></label></p>\n`;
+/** Where the OAuth store lives when `OAUTH_KV_PATH` is unset: a file on the `/data` volume. */
+export const DEFAULT_OAUTH_KV_PATH = '/data/oauth.kv';
 
 export interface OAuthConfig {
   /** The server's public origin, such as `https://caldav-mcp.example.com`. Also the issuer. */
@@ -42,9 +31,10 @@ export interface OAuthConfig {
   ownerPasswordHash: string;
   /** The hasher's pepper: at least 32 characters. */
   authPepper: string;
+  /** The Deno KV file that keeps grants and tokens across restarts. */
+  kvPath: string;
 }
 
-/** Seams for tests. Production uses the defaults. */
 /**
  * Hosts a `client_id` may live on. Claude's documents are on claude.ai
  * (`/oauth/mcp-oauth-client-metadata` for the apps, `/oauth/claude-code-client-metadata` for
@@ -53,10 +43,10 @@ export interface OAuthConfig {
  */
 export const TRUSTED_CLIENT_HOSTS: readonly string[] = ['claude.ai'];
 
-/** Seams for tests. Production uses the defaults. */
+/** The store, and seams for tests. Production passes only the store. */
 export interface OAuthOptions {
-  /** Defaults to a {@link MemoryOAuthStore}: a restart signs every connector out. */
-  store?: OAuthStore;
+  /** Where grants, codes, tokens and pending consents live; see {@link openOAuthStore}. */
+  store: OAuthStore;
   /** Network seam for fetching client metadata documents. Defaults to the platform `fetch`. */
   fetcher?: Fetcher;
   /** DNS seam for the same fetch. Defaults to the system resolver. */
@@ -77,41 +67,55 @@ export interface OAuth {
   authenticate(req: Request): Promise<Response | undefined>;
 }
 
+/** An open OAuth store and the way to close the database under it. */
+export interface OpenedOAuthStore {
+  store: OAuthStore;
+  close(): void;
+}
+
+/**
+ * Open the Deno KV database at `path` as the OAuth store, so a restart keeps connectors signed in.
+ * Needs `--unstable-kv`. Deno KV creates the file but not its directory.
+ *
+ * @throws {Error} Naming the path when the database cannot be opened, so the server never starts
+ * with OAuth on and nowhere to keep its tokens.
+ */
+export async function openOAuthStore(path: string): Promise<OpenedOAuthStore> {
+  let kv: Deno.Kv;
+  try {
+    kv = await Deno.openKv(path);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`Cannot open the OAuth store at ${path} (OAUTH_KV_PATH): ${reason}`);
+  }
+  return { store: new KvOAuthStore(kv), close: () => kv.close() };
+}
+
 /**
  * Build the authorization server and the resource-server guard for one owner.
  *
- * The owner proves who they are with a password on the consent page: the library leaves the owner
- * check to the app, and this server has no forward-auth in front of it. Showing the page needs no
- * password, since nothing is granted until the form is submitted. Approving needs the password;
- * denying does not, because a denial only sends the client away with `access_denied`.
+ * The owner proves who they are with a password on the consent page (the library's
+ * `ownerPassword`), since this server has no forward-auth in front of it. Approving needs the
+ * password; denying does not. After 10 wrong passwords in 15 minutes the library refuses every
+ * approval with `429` until the window ends.
  *
  * @throws {TypeError} When the URL, the pepper or anything the library checks is invalid.
  */
-export function createOAuth(config: OAuthConfig, options: OAuthOptions = {}): OAuth {
+export function createOAuth(config: OAuthConfig, options: OAuthOptions): OAuth {
   const hasher = createPasswordHasher({ pepper: config.authPepper });
-  const store = options.store ?? new MemoryOAuthStore();
   const issuer = config.publicUrl;
   const resource = issuer + MCP_PATH;
 
   const authorization = createAuthorizationServer({
     issuer,
     resources: [resource],
-    store,
+    store: options.store,
     clients: createClientMetadataFetcher({
       trustedHosts: TRUSTED_CLIENT_HOSTS,
       fetcher: options.fetcher,
       resolver: options.resolver,
     }),
-    renderConsent: (details) => withPasswordField(defaultConsentPage(details)),
-    async confirmOwner(c) {
-      if (c.req.method !== 'POST') return true;
-      // Read a copy: the library parses the original body after this check.
-      const form = await readForm(c.req.raw.clone());
-      if (form?.get('decision') === 'deny') return true;
-      const password = form?.get(OWNER_PASSWORD_FIELD);
-      if (typeof password !== 'string' || password === '') return false;
-      return (await hasher.verify(password, config.ownerPasswordHash)).valid;
-    },
+    ownerPassword: { hash: config.ownerPasswordHash, hasher },
   });
   const resourceServer = createResourceServer({
     resource,
@@ -144,20 +148,4 @@ export function createOAuth(config: OAuthConfig, options: OAuthOptions = {}): OA
       return res.status === 204 ? undefined : res;
     },
   };
-}
-
-/** Add the owner password field to the library's consent page, or fail if its markup changed. */
-function withPasswordField(html: string): string {
-  if (!html.includes(APPROVE_BUTTON)) {
-    throw new Error('The consent page has no approve button to put the password field before');
-  }
-  return html.replace(APPROVE_BUTTON, PASSWORD_INPUT + APPROVE_BUTTON);
-}
-
-async function readForm(req: Request): Promise<FormData | undefined> {
-  try {
-    return await parseBoundedFormData(req, { maxBytes: MAX_CONSENT_BODY_BYTES });
-  } catch {
-    return undefined;
-  }
 }
