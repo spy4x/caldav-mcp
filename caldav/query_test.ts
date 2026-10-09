@@ -388,7 +388,7 @@ Deno.test('query_events sends the date range to the server', async () => {
   );
 });
 
-Deno.test('the event text filter searches description and location too', async () => {
+Deno.test('the event text filter searches the location too', async () => {
   const { engine, fake } = setup();
   fake.objects.set(MEETING_PATH, {
     etag: MEETING_ETAG,
