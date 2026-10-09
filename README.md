@@ -98,11 +98,13 @@ limit sees each client's own address.
 characters from a password manager. After 10 wrong passwords in 15 minutes the server stops
 accepting approvals until the 15 minutes are over, so guessing is slow, but a long password is what
 keeps it safe. Pick a pepper, a random secret of at least 32 characters, for example
-`openssl rand -base64 48`. Then hash your password with it, from a checkout of this repository. The
-task asks for the password without echoing it, so it stays out of your shell history:
+`openssl rand -base64 48`. Then hash your password with it, from a checkout of this repository. Both
+the pepper and the password are read without echoing, so neither lands in your shell history:
 
 ```bash
-AUTH_PEPPER='<your pepper>' deno task password:hash
+read -rs AUTH_PEPPER && export AUTH_PEPPER   # paste the pepper; it is not echoed
+deno task password:hash
+unset AUTH_PEPPER
 ```
 
 **3. Set the env vars and start it in HTTP mode.**
