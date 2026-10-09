@@ -17,5 +17,5 @@ steps:
       JSR_TOKEN:
         from_secret: JSR_TOKEN
     commands:
-      - test "$${CI_COMMIT_TAG#v}" = "$(deno eval 'console.log(JSON.parse(Deno.readTextFileSync("deno.jsonc").replace(/^\s*\/\/.*$/gm, "")).version)')"
+      - test "$${CI_COMMIT_TAG#v}" = "$(deno eval 'import { parse } from "jsr:@std/jsonc@1"; console.log(parse(Deno.readTextFileSync("deno.jsonc")).version)')"
       - deno publish --token "$${JSR_TOKEN}"
