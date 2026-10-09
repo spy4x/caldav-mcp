@@ -1,6 +1,6 @@
 steps:
   check:
-    image: denoland/deno:2.9.0
+    image: denoland/deno:2.9.7
     commands:
       - deno task check
       - deno task test
