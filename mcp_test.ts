@@ -1,6 +1,11 @@
 // ── MCP protocol handler tests ──
 
-import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
+import {
+  type JsonRpcResponse,
+  MAX_BATCH_SIZE,
+  McpHandler,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from './mcp.ts';
 import { assertEquals } from 'std/assert/mod.ts';
 
 function handlerWithTools(): McpHandler {
@@ -133,4 +138,17 @@ Deno.test('a client response to a server request gets no response', async () => 
     await send(handlerWithTools(), { jsonrpc: '2.0', id: 8, error: { code: 1, message: 'no' } }),
     null,
   );
+});
+
+Deno.test('a batch over the size cap is refused whole, and one at the cap is answered', async () => {
+  const ping = (id: number) => ({ jsonrpc: '2.0', id, method: 'ping' });
+  const atCap = Array.from({ length: MAX_BATCH_SIZE }, (_, i) => ping(i));
+  const answered = await sendBatch(handlerWithTools(), atCap);
+  assertEquals(Array.isArray(answered) && answered.length, MAX_BATCH_SIZE);
+  const refused = await sendBatch(handlerWithTools(), [...atCap, ping(MAX_BATCH_SIZE)]);
+  assertEquals(refused, {
+    jsonrpc: '2.0',
+    id: null,
+    error: { code: -32600, message: 'Invalid Request' },
+  });
 });

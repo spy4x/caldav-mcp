@@ -30,6 +30,9 @@ export interface McpServerInfo {
 /** Protocol versions this server speaks, newest first. */
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
+/** Most messages one batch may hold; a larger batch is refused whole, before any is run. */
+export const MAX_BATCH_SIZE = 20;
+
 export class McpHandler {
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }>;
   private initialized = false;
@@ -126,7 +129,9 @@ export class McpHandler {
       return error(null, -32700, 'Parse error');
     }
     if (!Array.isArray(req)) return await this.handleOne(req);
-    if (req.length === 0) return error(null, -32600, 'Invalid Request');
+    if (req.length === 0 || req.length > MAX_BATCH_SIZE) {
+      return error(null, -32600, 'Invalid Request');
+    }
     const responses: JsonRpcResponse[] = [];
     for (const item of req) {
       const response = await this.handleOne(item);
