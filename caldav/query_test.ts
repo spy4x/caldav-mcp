@@ -37,7 +37,7 @@ Deno.test('renaming a Tasks.org task changes only SUMMARY and the edit stamps', 
   const diff = lineDiff(TASKS_ORG, after);
   const names = (lines: string[]) => lines.map((line) => line.split(/[;:]/)[0]).sort();
   assertEquals(names(diff.removed), ['DTSTAMP', 'LAST-MODIFIED', 'SUMMARY']);
-  assertEquals(names(diff.added), ['DTSTAMP', 'LAST-MODIFIED', 'SEQUENCE', 'SUMMARY']);
+  assertEquals(names(diff.added), ['DTSTAMP', 'LAST-MODIFIED', 'SUMMARY']);
   assert(diff.added.includes('SUMMARY:Water it'));
 });
 

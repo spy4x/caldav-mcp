@@ -1,11 +1,13 @@
 // ── Event tools: query_events, get_event, create_event, update_event, delete_event ──
 
-import type { EventPatch } from '@spy4x/time/ical-tasks';
+import { AlarmRelated, type EventPatch } from '@spy4x/time/ical-tasks';
 import type { McpHandler } from '../mcp.ts';
 import { DEFAULT_LIMIT, MAX_LIMIT, type QueryEngine } from '../caldav/query.ts';
 import {
+  alarmsSchema,
   type Args,
   dateSchema,
+  nullableAlarms,
   nullableDate,
   nullableString,
   nullableStringList,
@@ -28,6 +30,7 @@ function eventFields(nullable: boolean) {
     start: dateSchema('Start'),
     end: dateSchema('End', nullable),
     categories: { type: t('array'), items: { type: 'string' }, description: `Tags${clear}` },
+    alarms: alarmsSchema('start', nullable),
     rrule: { type: t('string'), description: `Repeat rule, such as FREQ=WEEKLY;BYDAY=TU${clear}` },
   };
 }
@@ -41,6 +44,7 @@ function readPatch(args: Args): EventPatch {
     end: nullableDate(args, 'end'),
     categories: nullableStringList(args, 'categories'),
     rrule: nullableString(args, 'rrule'),
+    alarms: nullableAlarms(args, 'alarms', AlarmRelated.Start),
   };
   if (patch.summary === null) throw new Error('summary cannot be cleared');
   if (patch.start === null) throw new Error('start cannot be cleared');
@@ -123,8 +127,9 @@ export function registerEventTools(mcp: McpHandler, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'update_event',
-      description: 'Change an event. Only the fields you pass change; guests, reminders, repeat ' +
-        'rules, time zones and exceptions are kept. Pass null to clear a field. Fails with code ' +
+      description:
+        'Change an event. Only the fields you pass change; guests, reminders (unless you ' +
+        'pass alarms), repeat rules, time zones and exceptions are kept. Pass null to clear a field. Fails with code ' +
         'Conflict when the event changed since you read it.',
       inputSchema: {
         type: 'object',

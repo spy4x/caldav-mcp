@@ -1,10 +1,13 @@
 // ── Todo tools: query_todos, get_todo, create_todo, update_todo, delete_todo ──
 
+import { AlarmRelated } from '@spy4x/time/ical-tasks';
 import type { McpHandler } from '../mcp.ts';
 import { DEFAULT_LIMIT, MAX_LIMIT, type QueryEngine, type TodoChange } from '../caldav/query.ts';
 import {
+  alarmsSchema,
   type Args,
   dateSchema,
+  nullableAlarms,
   nullableDate,
   nullableInteger,
   nullableString,
@@ -35,6 +38,7 @@ function todoFields(nullable: boolean) {
     },
     due: dateSchema('Due date', nullable),
     start: dateSchema('Start date (DTSTART)', nullable),
+    alarms: alarmsSchema('due', nullable),
     priority: { type: t('integer'), description: `1 (highest) to 9 (lowest)${clear}` },
     status: {
       type: t('string'),
@@ -73,6 +77,7 @@ function readChange(args: Args): TodoChange {
     parent: nullableString(args, 'parent'),
     rrule: nullableString(args, 'rrule'),
     sortOrder: nullableInteger(args, 'sortOrder', -(2 ** 31), 2 ** 31 - 1),
+    alarms: nullableAlarms(args, 'alarms', AlarmRelated.End),
   };
   if (change.summary === null) throw new Error('summary cannot be cleared');
   for (const key of Object.keys(change) as (keyof TodoChange)[]) {
@@ -177,7 +182,8 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'update_todo',
-      description: 'Change a task. Only the fields you pass change; reminders, repeat rules, ' +
+      description:
+        'Change a task. Only the fields you pass change; reminders (unless you pass alarms), repeat rules, ' +
         'links and fields this tool does not know are kept. Pass null to clear a field. ' +
         'Fails with code Conflict when the task changed since you read it.',
       inputSchema: {
