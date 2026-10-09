@@ -21,7 +21,7 @@ import {
   readBoundedText,
 } from '@spy4x/net/bounded-body';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 async function main(): Promise<void> {
   const env = loadEnv();
