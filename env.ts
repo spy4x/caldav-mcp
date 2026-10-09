@@ -1,6 +1,6 @@
 // ── Environment config with defaults ──
 
-import { type EnvReader, readEnvVar, systemEnv } from 'jsr:@spy4x/server@1.37.0/config';
+import { type EnvReader, readEnvVar, systemEnv } from 'jsr:@spy4x/server@1.40.0/config';
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 

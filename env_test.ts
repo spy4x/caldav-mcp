@@ -1,7 +1,7 @@
 // ── Environment config tests ──
 
 import { loadEnv } from './env.ts';
-import { createEnvReader } from 'jsr:@spy4x/server@1.37.0/config';
+import { createEnvReader } from 'jsr:@spy4x/server@1.40.0/config';
 import { assertEquals, assertThrows } from 'std/assert/mod.ts';
 
 /** Run `fn` with the given env vars set (undefined = unset), restoring the old values after. */
