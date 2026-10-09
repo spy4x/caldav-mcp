@@ -22,7 +22,7 @@ import {
   readBoundedText,
 } from '@spy4x/net/bounded-body';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.4.0';
 
 async function main(): Promise<void> {
   // `caldav-mcp grants …` manages OAuth grants and exits; it needs no CalDAV settings.
