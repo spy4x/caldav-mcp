@@ -155,7 +155,9 @@ deno eval --unstable-kv '
   kv.close()'
 ```
 
-Run it with `oauth.kv` replaced by your `OAUTH_KV_PATH`. A way in that this limit cannot block is
+Run it with `oauth.kv` replaced by the path to that file where you run it. The container image has
+no `deno`, so run it on the host against the file in the data volume, as a user who can write it.
+A way in that this limit cannot block is
 planned in https://github.com/spy4x/ts-libs/issues/477.
 
 ### Sign a connector out
