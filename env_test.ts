@@ -98,6 +98,23 @@ Deno.test('OAuth is on when all three of its env vars are set', () => {
   });
 });
 
+Deno.test('ALLOW_BEARER_TOKEN_WITH_OAUTH is off unless set to true', () => {
+  assertEquals(load({}).allowBearerTokenWithOAuth, false);
+  assertEquals(load({ ALLOW_BEARER_TOKEN_WITH_OAUTH: '' }).allowBearerTokenWithOAuth, false);
+  assertEquals(load({ ALLOW_BEARER_TOKEN_WITH_OAUTH: 'false' }).allowBearerTokenWithOAuth, false);
+  assertEquals(load({ ALLOW_BEARER_TOKEN_WITH_OAUTH: 'true' }).allowBearerTokenWithOAuth, true);
+});
+
+Deno.test('ALLOW_BEARER_TOKEN_WITH_OAUTH other than true or false stops startup', () => {
+  for (const value of ['yes', '1', 'TRUE']) {
+    assertThrows(
+      () => load({ ALLOW_BEARER_TOKEN_WITH_OAUTH: value }),
+      Error,
+      'ALLOW_BEARER_TOKEN_WITH_OAUTH must be true or false',
+    );
+  }
+});
+
 Deno.test('OAUTH_KV_PATH moves the OAuth store', () => {
   assertEquals(load({ ...OAUTH, OAUTH_KV_PATH: '/srv/oauth.kv' }).oauth?.kvPath, '/srv/oauth.kv');
 });

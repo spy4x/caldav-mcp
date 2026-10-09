@@ -84,7 +84,8 @@ Deno.test('a failed login never logs the token the client sent', async () => {
   assertEquals(logs.some((line) => line.includes(sent)), false);
 });
 
-Deno.test('the token is accepted as a Bearer header, a bare Authorization header or an X-Api-Key header', async () => {
+// OAuth off: the static token is the only way in and needs no ALLOW_BEARER_TOKEN_WITH_OAUTH.
+Deno.test('without OAuth the token is accepted as a Bearer header, a bare Authorization header or an X-Api-Key header', async () => {
   const { handler } = setup();
   const variants: Record<string, string>[] = [
     { 'Authorization': `Bearer ${TOKEN}` },

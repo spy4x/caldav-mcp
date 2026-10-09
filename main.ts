@@ -150,9 +150,19 @@ async function startHttp(mcp: McpHandler, env: Env, log: Log): Promise<void> {
   const oauth = env.oauth ? (await openOAuth(env.oauth)).oauth : undefined;
   log('info', `Starting HTTP transport on ${hostname}:${port}...`);
   if (oauth) log('info', `OAuth on for ${oauth.resource}; tokens kept in ${env.oauth?.kvPath}`);
+  if (oauth && token && !env.allowBearerTokenWithOAuth) {
+    log(
+      'warn',
+      'MCP_BEARER_TOKEN is refused: OAuth is on and ALLOW_BEARER_TOKEN_WITH_OAUTH is off',
+    );
+  }
   Deno.serve(
     { hostname, port },
-    createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies, oauth }),
+    createHttpHandler(mcp, token, log, {
+      trustedProxies: env.trustedProxies,
+      oauth,
+      allowBearerTokenWithOAuth: env.allowBearerTokenWithOAuth,
+    }),
   );
   log('info', `HTTP server listening on ${hostname}:${port}`);
 }
@@ -169,6 +179,10 @@ interface PeerInfo {
  * proxy and access logs. With `oauth`, a request without a valid token gets `401` with
  * `WWW-Authenticate` pointing at the protected resource metadata, and the OAuth routes are open.
  *
+ * With `oauth` the static token is refused unless `allowBearerTokenWithOAuth` is set: it is then
+ * checked as an OAuth token and gets the same `401` as any wrong token, so a client cannot tell
+ * whether a static token is configured.
+ *
  * Clients are rate limited per IP address: the peer address, or the first `X-Forwarded-For` hop
  * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
  * minute, checked before the token comparison, `CONSENT_PAGE_LIMIT` consent pages a minute, and
@@ -178,10 +192,15 @@ export function createHttpHandler(
   mcp: McpHandler,
   token: string | undefined,
   log: Log,
-  options: { trustedProxies?: readonly string[]; oauth?: OAuth } = {},
+  options: {
+    trustedProxies?: readonly string[];
+    oauth?: OAuth;
+    allowBearerTokenWithOAuth?: boolean;
+  } = {},
 ): (req: Request, info?: PeerInfo) => Promise<Response> {
-  const verifier = token ? createTokenVerifier(token) : undefined;
   const oauth = options.oauth;
+  const staticTokenOn = !!token && (!oauth || options.allowBearerTokenWithOAuth === true);
+  const verifier = staticTokenOn ? createTokenVerifier(token) : undefined;
   const window = { windowMs: 60_000, maxBuckets: RATE_LIMIT_MAX_CLIENTS };
   const limiter = createMemoryRateLimiter({ ...window, limit: RATE_LIMIT });
   // Counts every attempt, then gives the slot back when the token was right: only failures stay.

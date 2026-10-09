@@ -14,6 +14,12 @@ export interface Env {
   host: string;
   port: number;
   mcpBearerToken?: string;
+  /**
+   * Whether `/mcp` accepts `mcpBearerToken` while OAuth is on. Off unless
+   * `ALLOW_BEARER_TOKEN_WITH_OAUTH=true`, so a public OAuth deploy never takes the static token by
+   * accident. Without OAuth the static token is the only way in and this has no effect.
+   */
+  allowBearerTokenWithOAuth: boolean;
   logLevel: typeof LOG_LEVELS[number];
   /**
    * CIDR ranges of the reverse proxies in front of the HTTP transport. The rate limiter reads
@@ -39,8 +45,8 @@ const MIN_PEPPER_LENGTH = 32;
 
 /**
  * Read the configuration once at startup. Blank values count as unset. Throws on a missing
- * required value or on a `PORT`, `LOG_LEVEL` or `TRUSTED_PROXIES` it cannot use, naming the variable
- * but never echoing its value.
+ * required value or on a `PORT`, `LOG_LEVEL`, `TRUSTED_PROXIES` or `ALLOW_BEARER_TOKEN_WITH_OAUTH`
+ * it cannot use, naming the variable but never echoing its value.
  */
 export function loadEnv(env: EnvReader = systemEnv): Env {
   // Support both CALDAV_URL and CALDAV_SERVER_URL (homelab convention)
@@ -58,6 +64,10 @@ export function loadEnv(env: EnvReader = systemEnv): Env {
     host: optional('HOST') || '127.0.0.1',
     port: parsePort(optional('PORT') || '3000'),
     mcpBearerToken: optional('MCP_BEARER_TOKEN') || undefined,
+    allowBearerTokenWithOAuth: parseBoolean(
+      'ALLOW_BEARER_TOKEN_WITH_OAUTH',
+      optional('ALLOW_BEARER_TOKEN_WITH_OAUTH'),
+    ),
     logLevel: parseLogLevel(optional('LOG_LEVEL') || 'info'),
     trustedProxies: parseCidrList('TRUSTED_PROXIES', optional('TRUSTED_PROXIES')),
     oauth: parseOAuth(optional),
@@ -117,6 +127,13 @@ function parsePepper(raw: string): string {
     throw new Error(`AUTH_PEPPER must be at least ${MIN_PEPPER_LENGTH} characters`);
   }
   return raw;
+}
+
+/** `true` or `false`; blank counts as `false`. Anything else throws, so a typo never opens a door. */
+function parseBoolean(name: string, raw: string): boolean {
+  if (raw === '' || raw === 'false') return false;
+  if (raw === 'true') return true;
+  throw new Error(`${name} must be true or false`);
 }
 
 function parsePort(raw: string): number {

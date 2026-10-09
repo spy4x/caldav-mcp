@@ -60,10 +60,11 @@ function config(kvPath: string): OAuthConfig {
 }
 
 /**
- * A handler with OAuth and the static token on, the real tools and the fake CalDAV server. The
- * OAuth store is an in-memory Deno KV unless `kvPath` names a file. Dispose of it to close the KV.
+ * A handler with OAuth on and the static token set, the real tools and the fake CalDAV server. The
+ * static token is refused unless `allowBearerTokenWithOAuth`. The OAuth store is an in-memory Deno
+ * KV unless `kvPath` names a file. Dispose of it to close the KV.
  */
-async function setup(kvPath = ':memory:') {
+async function setup(kvPath = ':memory:', allowBearerTokenWithOAuth = false) {
   const network = fakeNetwork();
   const { oauth, close } = await openOAuth(config(kvPath), {
     fetcher: network.fetcher,
@@ -72,7 +73,10 @@ async function setup(kvPath = ':memory:') {
   const mcp = new McpHandler({ name: 'test', version: '0.0.0' });
   registerAllTools(mcp, caldavSetup().engine);
   const logs: string[] = [];
-  const handler = createHttpHandler(mcp, STATIC_TOKEN, (_level, msg) => logs.push(msg), { oauth });
+  const handler = createHttpHandler(mcp, STATIC_TOKEN, (_level, msg) => logs.push(msg), {
+    oauth,
+    allowBearerTokenWithOAuth,
+  });
   return { handler, logs, calls: network.calls, [Symbol.dispose]: close };
 }
 
@@ -296,14 +300,38 @@ Deno.test('after 10 wrong owner passwords from any addresses, approvals get 429 
   assert(blocked.headers.has('Retry-After'));
 });
 
-Deno.test('the static MCP_BEARER_TOKEN still works with OAuth on', async () => {
+/** The static token in each header it may arrive in. */
+function staticTokenHeaders(token: string): Record<string, string>[] {
+  return [
+    { 'Authorization': `Bearer ${token}` },
+    { 'Authorization': token },
+    { 'X-Api-Key': token },
+  ];
+}
+
+Deno.test('with OAuth on, the static token is refused by default with the same 401 as a wrong one', async () => {
   using ctx = await setup();
   const { handler } = ctx;
-  const variants: Record<string, string>[] = [
-    { 'Authorization': `Bearer ${STATIC_TOKEN}` },
-    { 'X-Api-Key': STATIC_TOKEN },
-  ];
-  for (const headers of variants) {
+  const answer = async (headers: Record<string, string>) => {
+    const res = await handler(rpc(PING, headers));
+    return {
+      status: res.status,
+      challenge: res.headers.get('WWW-Authenticate'),
+      body: await res.text(),
+    };
+  };
+  const wrong = staticTokenHeaders('not-the-static-token');
+  for (const [i, headers] of staticTokenHeaders(STATIC_TOKEN).entries()) {
+    const refused = await answer(headers);
+    assertEquals(refused.status, 401);
+    assertEquals(refused, await answer(wrong[i]!));
+  }
+});
+
+Deno.test('with OAuth on, the static token works when ALLOW_BEARER_TOKEN_WITH_OAUTH allows it', async () => {
+  using ctx = await setup(':memory:', true);
+  const { handler } = ctx;
+  for (const headers of staticTokenHeaders(STATIC_TOKEN)) {
     const res = await handler(rpc(PING, headers));
     assertEquals(res.status, 200);
     assertEquals(await res.json(), { jsonrpc: '2.0', id: 1, result: {} });
@@ -323,7 +351,7 @@ Deno.test('a client_id outside claude.ai gets 400 and nothing is fetched', async
 });
 
 Deno.test('opening consent pages is limited per client, tighter than other requests', async () => {
-  using ctx = await setup();
+  using ctx = await setup(':memory:', true);
   const { handler } = ctx;
   const { challenge } = await pkce();
   for (let i = 0; i < CONSENT_PAGE_LIMIT; i++) {
