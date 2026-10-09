@@ -6,6 +6,7 @@ import {
   createLogger,
   httpListenOptions,
   MAX_BODY_BYTES,
+  VERSION,
 } from './main.ts';
 import { McpHandler } from './mcp.ts';
 import { assertEquals, assertThrows } from 'std/assert/mod.ts';
@@ -239,4 +240,10 @@ Deno.test('40 parallel requests with the right token from one address get no 429
     return res.status;
   }));
   assertEquals(statuses.filter((status) => status === 429).length, 0);
+});
+
+Deno.test('VERSION matches the version in deno.jsonc', async () => {
+  const config = await Deno.readTextFile(new URL('./deno.jsonc', import.meta.url));
+  const match = config.match(/^\s*"version":\s*"([^"]+)"/m);
+  assertEquals(VERSION, match?.[1]);
 });
