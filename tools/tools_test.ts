@@ -107,7 +107,7 @@ const dataAt = (fake: ReturnType<typeof server>['fake'], path: string) =>
 const alarmLines = (data: string): string[] =>
   data.match(/BEGIN:VALARM\r\n[\s\S]*?END:VALARM\r\n/g) ?? [];
 
-Deno.test('alarms with before on a task with a due date write a reminder counted from due', async () => {
+Deno.test('alarms with before on a task count the reminder from its due date', async () => {
   const { call, fake } = server();
   const before = dataAt(fake, ZONED_PATH);
   const result = await call('update_todo', {
@@ -118,7 +118,8 @@ Deno.test('alarms with before on a task with a due date write a reminder counted
   assertEquals(result.isError, false);
   const after = dataAt(fake, ZONED_PATH);
   assertEquals(alarmLines(after), [
-    'BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;RELATED=END:-PT1H\r\nDESCRIPTION:Call the bank\r\nEND:VALARM\r\n',
+    'BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;RELATED=END:-PT1H\r\n' +
+    'DESCRIPTION:Call the bank\r\nEND:VALARM\r\n',
   ]);
   assertEquals(
     lineDiff(before, after).removed.filter((l) => !/^(DTSTAMP|LAST-MODIFIED)/.test(l)),
@@ -196,7 +197,7 @@ Deno.test('an update without alarms leaves existing reminders byte-identical', a
   assertEquals(alarmLines(dataAt(fake, TASKS_ORG_PATH)), before);
 });
 
-Deno.test('alarms keeps an equal existing reminder byte for byte and adds the new one', async () => {
+Deno.test('alarms keeps an equal existing reminder byte for byte', async () => {
   const { call, fake } = server();
   const before = alarmLines(dataAt(fake, MEETING_PATH));
   const result = await call('update_event', {
@@ -210,7 +211,7 @@ Deno.test('alarms keeps an equal existing reminder byte for byte and adds the ne
   assertEquals(after.includes(before[0]!), true);
 });
 
-Deno.test('a reminder before the due time on a task with no due date is refused and not written', async () => {
+Deno.test('a reminder before due without a due date is refused, nothing written', async () => {
   const { call, fake } = server();
   const result = await call('create_todo', {
     calendarUrl: url('/dav/cal/user%40example.com/tasks/'),
@@ -241,7 +242,8 @@ Deno.test('malformed alarms are an isError result and nothing is written', async
       alarms,
     });
     assertEquals(result.isError, true, JSON.stringify(alarms));
-    assert(String(result.body).includes('alarms'), JSON.stringify(alarms));
+    const message = typeof result.body === 'string' ? result.body : result.body['error'];
+    assert(String(message).includes('alarms'), JSON.stringify(alarms));
   }
   assertEquals(fake.requests.filter((r) => r.method === 'PUT'), []);
 });

@@ -129,8 +129,8 @@ export function registerEventTools(mcp: McpHandler, engine: QueryEngine): void {
       name: 'update_event',
       description:
         'Change an event. Only the fields you pass change; guests, reminders (unless you ' +
-        'pass alarms), repeat rules, time zones and exceptions are kept. Pass null to clear a field. Fails with code ' +
-        'Conflict when the event changed since you read it.',
+        'pass alarms), repeat rules, time zones and exceptions are kept. Pass null to clear a ' +
+        'field. Fails with code Conflict when the event changed since you read it.',
       inputSchema: {
         type: 'object',
         properties: {

@@ -95,8 +95,10 @@ Reminders (VALARM) are shown under `reminders`. `create_todo`, `update_todo`, `c
 - **The list replaces every reminder.** A reminder that is already there and equal is kept byte
   for byte, with the lines other apps added to it. `null` removes all of them. Leaving `alarms`
   out keeps them.
-- A reminder the task or event has no date for is refused with a message naming the missing date,
-  and nothing is written.
+- Writing a new reminder the task or event has no date for is refused with a message naming the
+  missing date, and nothing is written. Removing the date later (`{"due": null}`) is allowed and
+  leaves the reminders already there in place.
+- **`at`** also accepts a time with an offset (`+07:00`); it is converted to UTC.
 
 ## Examples
 

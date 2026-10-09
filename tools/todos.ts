@@ -183,8 +183,9 @@ export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
     {
       name: 'update_todo',
       description:
-        'Change a task. Only the fields you pass change; reminders (unless you pass alarms), repeat rules, ' +
-        'links and fields this tool does not know are kept. Pass null to clear a field. ' +
+        'Change a task. Only the fields you pass change; reminders (unless you pass alarms), ' +
+        'repeat rules, links and fields this tool does not know are kept. Pass null to clear a ' +
+        'field. ' +
         'Fails with code Conflict when the task changed since you read it.',
       inputSchema: {
         type: 'object',

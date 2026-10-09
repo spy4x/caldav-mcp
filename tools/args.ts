@@ -140,7 +140,7 @@ export function alarmsSchema(from: 'due' | 'start', nullable: boolean) {
           type: 'string',
           description: `How long before the ${from} to remind, as an ISO 8601 duration: PT15M, ` +
             `PT1H, P1D, PT0S (at the ${from} itself). Needs a ${from} date on the ` +
-            `${from === 'due' ? 'task' : 'event'}. Give this or at.`,
+            `${from === 'due' ? 'task' : 'event'}. Give this or at; no sign.`,
         },
         at: {
           type: 'string',
