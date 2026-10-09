@@ -4,12 +4,15 @@ import {
   AUTH_FAILURE_LIMIT,
   createHttpHandler,
   createLogger,
+  httpHandlerOptions,
   httpListenOptions,
   MAX_BODY_BYTES,
   SESSION_ID_HEADER,
   VERSION,
 } from './main.ts';
 import { McpHandler } from './mcp.ts';
+import { loadEnv } from './env.ts';
+import { createEnvReader } from '@spy4x/server/config/env';
 import { assertEquals, assertNotEquals, assertThrows } from 'std/assert/mod.ts';
 
 const TOKEN = 'test-token-123';
@@ -55,6 +58,21 @@ Deno.test('HTTP mode starts with OAuth alone, without MCP_BEARER_TOKEN', () => {
     port: 3000,
     token: undefined,
   });
+});
+
+Deno.test('the HTTP transport passes ALLOW_BEARER_TOKEN_WITH_OAUTH to the handler, refusing when unset', () => {
+  const allowed = (value: string | undefined) => {
+    const env = loadEnv(createEnvReader({
+      CALDAV_URL: 'https://cal.example.com',
+      CALDAV_USERNAME: 'user',
+      CALDAV_PASSWORD: 'pass',
+      ALLOW_BEARER_TOKEN_WITH_OAUTH: value,
+    }));
+    return httpHandlerOptions(env, undefined).allowBearerTokenWithOAuth;
+  };
+  assertEquals(allowed(undefined), false);
+  assertEquals(allowed('false'), false);
+  assertEquals(allowed('true'), true);
 });
 
 Deno.test('HTTP mode listens on the configured host and port', () => {

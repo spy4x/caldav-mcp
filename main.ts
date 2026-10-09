@@ -158,13 +158,29 @@ async function startHttp(mcp: McpHandler, env: Env, log: Log): Promise<void> {
   }
   Deno.serve(
     { hostname, port },
-    createHttpHandler(mcp, token, log, {
-      trustedProxies: env.trustedProxies,
-      oauth,
-      allowBearerTokenWithOAuth: env.allowBearerTokenWithOAuth,
-    }),
+    createHttpHandler(mcp, token, log, httpHandlerOptions(env, oauth)),
   );
   log('info', `HTTP server listening on ${hostname}:${port}`);
+}
+
+/** Options for {@link createHttpHandler}. */
+export interface HttpHandlerOptions {
+  trustedProxies?: readonly string[];
+  oauth?: OAuth;
+  /** Accept the static token while `oauth` is set. Without it the static token is refused. */
+  allowBearerTokenWithOAuth?: boolean;
+}
+
+/** The handler options the HTTP transport runs with, taken from the environment. */
+export function httpHandlerOptions(
+  env: Pick<Env, 'trustedProxies' | 'allowBearerTokenWithOAuth'>,
+  oauth: OAuth | undefined,
+): HttpHandlerOptions {
+  return {
+    trustedProxies: env.trustedProxies,
+    oauth,
+    allowBearerTokenWithOAuth: env.allowBearerTokenWithOAuth,
+  };
 }
 
 /** The part of `Deno.ServeHandlerInfo` the handler reads. */
@@ -179,9 +195,9 @@ interface PeerInfo {
  * proxy and access logs. With `oauth`, a request without a valid token gets `401` with
  * `WWW-Authenticate` pointing at the protected resource metadata, and the OAuth routes are open.
  *
- * With `oauth` the static token is refused unless `allowBearerTokenWithOAuth` is set: it is then
- * checked as an OAuth token and gets the same `401` as any wrong token, so a client cannot tell
- * whether a static token is configured.
+ * With `oauth` the static token is refused unless `allowBearerTokenWithOAuth` is set. A refused
+ * static token is checked as an OAuth token and gets the same `401` as any wrong token, so a client
+ * cannot tell whether a static token is configured.
  *
  * Clients are rate limited per IP address: the peer address, or the first `X-Forwarded-For` hop
  * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
@@ -192,11 +208,7 @@ export function createHttpHandler(
   mcp: McpHandler,
   token: string | undefined,
   log: Log,
-  options: {
-    trustedProxies?: readonly string[];
-    oauth?: OAuth;
-    allowBearerTokenWithOAuth?: boolean;
-  } = {},
+  options: HttpHandlerOptions = {},
 ): (req: Request, info?: PeerInfo) => Promise<Response> {
   const oauth = options.oauth;
   const staticTokenOn = !!token && (!oauth || options.allowBearerTokenWithOAuth === true);
