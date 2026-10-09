@@ -6,18 +6,24 @@ import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
 import { McpHandler } from './mcp.ts';
 import { registerAllTools } from './tools/index.ts';
-import { timingSafeEqual } from 'std/crypto/timing_safe_equal.ts';
+import {
+  bearerTokenFromHeaders,
+  createTokenVerifier,
+  formatLogLine,
+} from '@spy4x/server/http/bearer-auth';
+import { createMemoryRateLimiter } from '@spy4x/platform/rate-limit/memory';
+import { clientIp, clientIpBucket } from '@spy4x/platform/rate-limit/client-ip';
+import {
+  BodyReadTimeoutError,
+  PayloadTooLargeError,
+  readBoundedText,
+} from '@spy4x/net/bounded-body';
 
 export const VERSION = '0.1.0';
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  const log = (level: string, msg: string) => {
-    const levels = ['debug', 'info', 'warn', 'error'];
-    if (levels.indexOf(level) >= levels.indexOf(env.logLevel)) {
-      console.error(`[${level.toUpperCase()}] ${msg}`);
-    }
-  };
+  const log = createLogger(env, (line) => console.error(line));
 
   log('info', `caldav-mcp v${VERSION} starting...`);
   log('info', `CalDAV server: ${env.caldavUrl}`);
@@ -42,6 +48,25 @@ async function main(): Promise<void> {
   } else {
     await startStdio(mcp, log);
   }
+}
+
+type Log = (level: string, msg: string) => void;
+
+/**
+ * Build the logger: drops lines below `LOG_LEVEL` and redacts the bearer token and the CalDAV
+ * password from every line it writes, so no code path can log either by accident.
+ */
+export function createLogger(
+  env: Pick<Env, 'logLevel' | 'mcpBearerToken' | 'caldavPassword'>,
+  write: (line: string) => void,
+): Log {
+  const levels = ['debug', 'info', 'warn', 'error'];
+  const secrets = [env.mcpBearerToken, env.caldavPassword];
+  return (level, msg) => {
+    if (levels.indexOf(level) >= levels.indexOf(env.logLevel)) {
+      write(formatLogLine(level, msg, secrets));
+    }
+  };
 }
 
 // ── stdio transport (default) ──
@@ -85,7 +110,14 @@ async function startStdio(
 
 // ── HTTP transport (optional, for OpenWebUI/n8n via mcpo) ──
 
-type Log = (level: string, msg: string) => void;
+/** Requests each client may make per minute. */
+const RATE_LIMIT = 100;
+/** Wrong tokens each client may send per minute before it gets 429. */
+export const AUTH_FAILURE_LIMIT = 10;
+/** Most clients the limiter tracks at once, so a flood of addresses cannot grow memory unbounded. */
+const RATE_LIMIT_MAX_CLIENTS = 10_000;
+/** Largest `POST /mcp` body accepted. One JSON-RPC message is a few kilobytes at most. */
+export const MAX_BODY_BYTES = 1024 * 1024;
 
 /**
  * Where the HTTP transport listens. Refuses to start without `MCP_BEARER_TOKEN`, because the
@@ -103,47 +135,64 @@ export function httpListenOptions(
 function startHttp(mcp: McpHandler, env: Env, log: Log): void {
   const { hostname, port, token } = httpListenOptions(env);
   log('info', `Starting HTTP transport on ${hostname}:${port}...`);
-  Deno.serve({ hostname, port }, createHttpHandler(mcp, token, log));
+  Deno.serve(
+    { hostname, port },
+    createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies }),
+  );
   log('info', `HTTP server listening on ${hostname}:${port}`);
+}
+
+/** The part of `Deno.ServeHandlerInfo` the handler reads. */
+interface PeerInfo {
+  remoteAddr?: Deno.Addr;
 }
 
 /**
  * Build the HTTP request handler. `/health` is open; `/mcp` needs the token as
  * `Authorization: Bearer <token>`, a bare `Authorization: <token>` or `X-Api-Key: <token>`.
  * Tokens in the query string are refused: URLs end up in proxy and access logs.
+ *
+ * Clients are rate limited per IP address: the peer address, or the first `X-Forwarded-For` hop
+ * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
+ * minute, checked before the token comparison, and `RATE_LIMIT` authorized requests a minute.
  */
 export function createHttpHandler(
   mcp: McpHandler,
   token: string,
   log: Log,
-): (req: Request) => Promise<Response> {
-  const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-  const RATE_LIMIT = 100; // requests per minute
+  options: { trustedProxies?: readonly string[] } = {},
+): (req: Request, info?: PeerInfo) => Promise<Response> {
+  const verifier = createTokenVerifier(token);
+  const window = { windowMs: 60_000, maxBuckets: RATE_LIMIT_MAX_CLIENTS };
+  const limiter = createMemoryRateLimiter({ ...window, limit: RATE_LIMIT });
+  // Counts every attempt, then gives the slot back when the token was right: only failures stay.
+  const authFailures = createMemoryRateLimiter({ ...window, limit: AUTH_FAILURE_LIMIT });
+  const ipOptions = { trustedProxies: options.trustedProxies ?? [] };
 
-  return async (req: Request): Promise<Response> => {
+  return async (req: Request, info?: PeerInfo): Promise<Response> => {
     const url = new URL(req.url);
 
     if (url.pathname === '/health') {
       return json({ status: 'ok', version: VERSION });
     }
 
-    if (!(await isAuthorized(req, token))) {
+    const addr = info?.remoteAddr;
+    const peer = addr && 'hostname' in addr ? addr.hostname : undefined;
+    const client = clientIpBucket(clientIp(req, peer, 'x-forwarded-for', ipOptions));
+
+    // Reserve, verify and refund with no await between them, so parallel right-token requests
+    // never hold a reserved slot at the same time and cannot exhaust the wrong-token budget.
+    const attempt = authFailures.check(client);
+    if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
+    if (!isAuthorized(req, verifier)) {
       // Never log what the client sent: a near-miss token is still a secret.
       log('debug', `Auth failed for ${req.method} ${url.pathname}`);
       return json({ error: 'Unauthorized' }, 401);
     }
+    authFailures.refund(client, attempt.at);
 
-    const ip = req.headers.get('x-forwarded-for') || 'unknown';
-    const now = Date.now();
-    let rl = rateLimitMap.get(ip);
-    if (!rl || now > rl.resetAt) {
-      rl = { count: 0, resetAt: now + 60000 };
-      rateLimitMap.set(ip, rl);
-    }
-    rl.count++;
-    if (rl.count > RATE_LIMIT) {
-      return json({ error: 'Rate limit exceeded' }, 429, { 'Retry-After': '60' });
-    }
+    const decision = limiter.check(client);
+    if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
 
     if (url.pathname === '/mcp') {
       if (req.method === 'POST') return await handleMcpPost(req, mcp);
@@ -154,30 +203,27 @@ export function createHttpHandler(
   };
 }
 
-async function isAuthorized(req: Request, token: string): Promise<boolean> {
-  const auth = req.headers.get('Authorization');
-  const candidates = [
-    auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : auth,
-    req.headers.get('X-Api-Key'),
-  ];
-  for (const candidate of candidates) {
-    if (candidate && await tokensEqual(candidate, token)) return true;
-  }
-  return false;
+function tooManyRequests(retryAfterMs: number): Response {
+  const retryAfter = String(Math.max(1, Math.ceil(retryAfterMs / 1000)));
+  return json({ error: 'Rate limit exceeded' }, 429, { 'Retry-After': retryAfter });
 }
 
-/** Compare SHA-256 digests in constant time, so neither content nor length leaks by timing. */
-async function tokensEqual(a: string, b: string): Promise<boolean> {
-  const enc = new TextEncoder();
-  const [da, db] = await Promise.all([
-    crypto.subtle.digest('SHA-256', enc.encode(a)),
-    crypto.subtle.digest('SHA-256', enc.encode(b)),
-  ]);
-  return timingSafeEqual(da, db);
+/** Check the `Authorization` header, then `X-Api-Key`, through the constant-time verifier. */
+function isAuthorized(req: Request, verifier: ReturnType<typeof createTokenVerifier>): boolean {
+  const candidates = [bearerTokenFromHeaders(req.headers), req.headers.get('X-Api-Key')];
+  return candidates.some((candidate) => !!candidate && verifier.verifySync(candidate));
 }
 
 async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
-  const response = await mcp.handleMessage(await req.text());
+  let body: string;
+  try {
+    body = await readBoundedText(req, { maxBytes: MAX_BODY_BYTES });
+  } catch (err) {
+    if (err instanceof PayloadTooLargeError) return json({ error: 'Payload too large' }, 413);
+    if (err instanceof BodyReadTimeoutError) return json({ error: 'Request timeout' }, 408);
+    throw err;
+  }
+  const response = await mcp.handleMessage(body);
   // A notification has no response: acknowledge it without a body.
   if (!response) return new Response(null, { status: 202 });
   return json(response);
