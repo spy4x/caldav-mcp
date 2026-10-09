@@ -44,6 +44,10 @@ from it gets `429` with `Retry-After` until the minute is over, before its token
 Each client may also send 100 authorized requests per minute. A request body over 1 MiB gets `413`,
 and a batch of more than 20 messages is refused whole.
 
+A request to `/mcp` with an `Origin` header gets `403` unless the origin is `PUBLIC_URL`, so a web
+page you visit cannot reach the server through your browser. Without `PUBLIC_URL` every `Origin` is
+refused. Clients that are not browsers, Claude's among them, send no `Origin` and are not affected.
+
 ## OAuth
 
 Set `PUBLIC_URL`, `OWNER_PASSWORD_HASH` and `AUTH_PEPPER` together and the server becomes its own

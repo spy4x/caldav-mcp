@@ -76,6 +76,7 @@ async function setup(kvPath = ':memory:', allowBearerTokenWithOAuth = false) {
   const handler = createHttpHandler(mcp, STATIC_TOKEN, (_level, msg) => logs.push(msg), {
     oauth,
     allowBearerTokenWithOAuth,
+    allowedOrigins: [ORIGIN],
   });
   return { handler, logs, calls: network.calls, [Symbol.dispose]: close };
 }
