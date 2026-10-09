@@ -4,7 +4,7 @@
   "license": "MIT",
   "exports": "./main.ts",
   "publish": {
-    "include": ["main.ts", "env.ts", "mcp.ts", "caldav/**/*.ts", "tools/**/*.ts", "LICENSE", "README.md"],
+    "include": ["main.ts", "env.ts", "mcp.ts", "oauth.ts", "caldav/**/*.ts", "tools/**/*.ts", "LICENSE", "README.md"],
     "exclude": ["**/*_test.ts", "caldav/testing"]
   },
   "description": "Lightweight CalDAV MCP server — events + todos for AI agents",
@@ -40,6 +40,8 @@
     "@spy4x/net": "jsr:@spy4x/net@1.45.0",
     "@spy4x/platform": "jsr:@spy4x/platform@1.45.0",
     "@spy4x/server": "jsr:@spy4x/server@1.45.0",
-    "@spy4x/time": "jsr:@spy4x/time@1.45.0"
+    "@spy4x/time": "jsr:@spy4x/time@1.45.0",
+    // The version @spy4x/server's mcp-oauth is built on, so the lockfile holds one copy.
+    "hono": "jsr:@hono/hono@4.13.8"
   }
 }

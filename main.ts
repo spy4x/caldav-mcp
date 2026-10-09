@@ -5,6 +5,8 @@ import { type Env, loadEnv } from './env.ts';
 import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
 import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
+import { createOAuth, MCP_PATH, type OAuth } from './oauth.ts';
+import { AUTHORIZE_PATH } from '@spy4x/server/mcp-oauth';
 import { registerAllTools } from './tools/index.ts';
 import {
   bearerTokenFromHeaders,
@@ -40,8 +42,8 @@ async function main(): Promise<void> {
 
   // Determine transport
   const args = Deno.args;
-  const useHttp = args.includes('--http') || args.includes('-h') ||
-    !!Deno.env.get('MCP_BEARER_TOKEN');
+  const useHttp = args.includes('--http') || args.includes('-h') || !!env.mcpBearerToken ||
+    !!env.oauth;
 
   if (useHttp) {
     await startHttp(mcp, env, log);
@@ -57,11 +59,16 @@ type Log = (level: string, msg: string) => void;
  * password from every line it writes, so no code path can log either by accident.
  */
 export function createLogger(
-  env: Pick<Env, 'logLevel' | 'mcpBearerToken' | 'caldavPassword'>,
+  env: Pick<Env, 'logLevel' | 'mcpBearerToken' | 'caldavPassword' | 'oauth'>,
   write: (line: string) => void,
 ): Log {
   const levels = ['debug', 'info', 'warn', 'error'];
-  const secrets = [env.mcpBearerToken, env.caldavPassword];
+  const secrets = [
+    env.mcpBearerToken,
+    env.caldavPassword,
+    env.oauth?.ownerPasswordHash,
+    env.oauth?.authPepper,
+  ];
   return (level, msg) => {
     if (levels.indexOf(level) >= levels.indexOf(env.logLevel)) {
       write(formatLogLine(level, msg, secrets));
@@ -120,24 +127,26 @@ const RATE_LIMIT_MAX_CLIENTS = 10_000;
 export const MAX_BODY_BYTES = 1024 * 1024;
 
 /**
- * Where the HTTP transport listens. Refuses to start without `MCP_BEARER_TOKEN`, because the
- * server holds CalDAV credentials and an open port would hand them to anyone who can reach it.
+ * Where the HTTP transport listens. Refuses to start without `MCP_BEARER_TOKEN` or OAuth, because
+ * the server holds CalDAV credentials and an open port would hand them to anyone who can reach it.
  */
 export function httpListenOptions(
-  env: Pick<Env, 'host' | 'port' | 'mcpBearerToken'>,
-): { hostname: string; port: number; token: string } {
-  if (!env.mcpBearerToken) {
-    throw new Error('MCP_BEARER_TOKEN env var is required for HTTP mode');
+  env: Pick<Env, 'host' | 'port' | 'mcpBearerToken' | 'oauth'>,
+): { hostname: string; port: number; token: string | undefined } {
+  if (!env.mcpBearerToken && !env.oauth) {
+    throw new Error('MCP_BEARER_TOKEN or the OAuth env vars are required for HTTP mode');
   }
   return { hostname: env.host, port: env.port, token: env.mcpBearerToken };
 }
 
 function startHttp(mcp: McpHandler, env: Env, log: Log): void {
   const { hostname, port, token } = httpListenOptions(env);
+  const oauth = env.oauth ? createOAuth(env.oauth) : undefined;
   log('info', `Starting HTTP transport on ${hostname}:${port}...`);
+  if (oauth) log('info', `OAuth on for ${oauth.resource}; a restart signs connectors out`);
   Deno.serve(
     { hostname, port },
-    createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies }),
+    createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies, oauth }),
   );
   log('info', `HTTP server listening on ${hostname}:${port}`);
 }
@@ -148,21 +157,25 @@ interface PeerInfo {
 }
 
 /**
- * Build the HTTP request handler. `/health` is open; `/mcp` needs the token as
- * `Authorization: Bearer <token>`, a bare `Authorization: <token>` or `X-Api-Key: <token>`.
- * Tokens in the query string are refused: URLs end up in proxy and access logs.
+ * Build the HTTP request handler. `/health` is open; `/mcp` needs the static token as
+ * `Authorization: Bearer <token>`, a bare `Authorization: <token>` or `X-Api-Key: <token>`, or,
+ * with `oauth`, an access token it issued. Tokens in the query string are refused: URLs end up in
+ * proxy and access logs. With `oauth`, a request without a valid token gets `401` with
+ * `WWW-Authenticate` pointing at the protected resource metadata, and the OAuth routes are open.
  *
  * Clients are rate limited per IP address: the peer address, or the first `X-Forwarded-For` hop
- * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
- * minute, checked before the token comparison, and `RATE_LIMIT` authorized requests a minute.
+ * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens or
+ * refused consents a minute, checked before the token comparison, and `RATE_LIMIT` requests a
+ * minute.
  */
 export function createHttpHandler(
   mcp: McpHandler,
-  token: string,
+  token: string | undefined,
   log: Log,
-  options: { trustedProxies?: readonly string[] } = {},
+  options: { trustedProxies?: readonly string[]; oauth?: OAuth } = {},
 ): (req: Request, info?: PeerInfo) => Promise<Response> {
-  const verifier = createTokenVerifier(token);
+  const verifier = token ? createTokenVerifier(token) : undefined;
+  const oauth = options.oauth;
   const window = { windowMs: 60_000, maxBuckets: RATE_LIMIT_MAX_CLIENTS };
   const limiter = createMemoryRateLimiter({ ...window, limit: RATE_LIMIT });
   // Counts every attempt, then gives the slot back when the token was right: only failures stay.
@@ -180,21 +193,38 @@ export function createHttpHandler(
     const peer = addr && 'hostname' in addr ? addr.hostname : undefined;
     const client = clientIpBucket(clientIp(req, peer, 'x-forwarded-for', ipOptions));
 
-    // Reserve, verify and refund with no await between them, so parallel right-token requests
-    // never hold a reserved slot at the same time and cannot exhaust the wrong-token budget.
+    if (oauth?.handles(url.pathname)) {
+      const decision = limiter.check(client);
+      if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
+      if (req.method !== 'POST' || url.pathname !== AUTHORIZE_PATH) return await oauth.fetch(req);
+      // A consent submission carries the owner password: a refusal counts as a failed login.
+      const attempt = authFailures.check(client);
+      if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
+      const res = await oauth.fetch(req);
+      if (res.status === 403) log('debug', 'Consent refused');
+      else authFailures.refund(client, attempt.at);
+      return res;
+    }
+
+    // Reserve, verify and refund with no await between them for the static token, so parallel
+    // right-token requests never hold a reserved slot at the same time and cannot exhaust the
+    // wrong-token budget. An OAuth token needs a store lookup, so its slot is held until then.
     const attempt = authFailures.check(client);
     if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
-    if (!isAuthorized(req, verifier)) {
-      // Never log what the client sent: a near-miss token is still a secret.
-      log('debug', `Auth failed for ${req.method} ${url.pathname}`);
-      return json({ error: 'Unauthorized' }, 401);
+    if (!(verifier && isAuthorized(req, verifier))) {
+      const refused = oauth ? await oauth.authenticate(req) : json({ error: 'Unauthorized' }, 401);
+      if (refused) {
+        // Never log what the client sent: a near-miss token is still a secret.
+        log('debug', `Auth failed for ${req.method} ${url.pathname}`);
+        return refused;
+      }
     }
     authFailures.refund(client, attempt.at);
 
     const decision = limiter.check(client);
     if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
 
-    if (url.pathname === '/mcp') {
+    if (url.pathname === MCP_PATH) {
       if (req.method === 'POST') return await handleMcpPost(req, mcp);
       return json({ error: 'Method not allowed' }, 405, { 'Allow': 'POST' });
     }

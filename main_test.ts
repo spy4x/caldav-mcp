@@ -43,6 +43,15 @@ Deno.test('HTTP mode refuses to start without MCP_BEARER_TOKEN', () => {
   );
 });
 
+Deno.test('HTTP mode starts with OAuth alone, without MCP_BEARER_TOKEN', () => {
+  const oauth = { publicUrl: 'https://mcp.example.com', ownerPasswordHash: 'h', authPepper: 'p' };
+  assertEquals(httpListenOptions({ host: '127.0.0.1', port: 3000, oauth }), {
+    hostname: '127.0.0.1',
+    port: 3000,
+    token: undefined,
+  });
+});
+
 Deno.test('HTTP mode listens on the configured host and port', () => {
   assertEquals(httpListenOptions({ host: '127.0.0.1', port: 3001, mcpBearerToken: TOKEN }), {
     hostname: '127.0.0.1',
@@ -184,6 +193,23 @@ Deno.test('log lines never contain the bearer token or the CalDAV password', () 
   assertEquals(lines[0]!.includes(TOKEN), false);
   assertEquals(lines[0]!.includes('caldav-secret'), false);
   assertEquals(lines[0]!.startsWith('[ERROR] request failed'), true);
+});
+
+Deno.test('log lines never contain the owner password hash or the pepper', () => {
+  const lines: string[] = [];
+  const oauth = {
+    publicUrl: 'https://mcp.example.com',
+    ownerPasswordHash: 'hash-secret-value',
+    authPepper: 'pepper-secret-value',
+  };
+  const log = createLogger(
+    { logLevel: 'debug', caldavPassword: 'caldav-secret', oauth },
+    (line) => lines.push(line),
+  );
+  log('error', 'config dump: hash-secret-value pepper-secret-value');
+  assertEquals(lines.length, 1);
+  assertEquals(lines[0]!.includes('hash-secret-value'), false);
+  assertEquals(lines[0]!.includes('pepper-secret-value'), false);
 });
 
 Deno.test('log lines below LOG_LEVEL are dropped', () => {
