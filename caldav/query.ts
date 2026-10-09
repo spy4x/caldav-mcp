@@ -313,6 +313,19 @@ export class QueryEngine {
     if (target.pathname.endsWith('/')) {
       return fail('InvalidArgument', `${url} is a collection, not a task or event`);
     }
+    if (/[?#]/.test(url)) {
+      return fail('InvalidArgument', `${url} has a query or fragment; pass the url as listed`);
+    }
+    // An encoded separator or dot segment could step out of the calendar on the server.
+    let name: string;
+    try {
+      name = decodeURIComponent(target.pathname.slice(target.pathname.lastIndexOf('/') + 1));
+    } catch {
+      return fail('InvalidArgument', `${url} has a malformed escape`);
+    }
+    if (/[/\\]/.test(name) || name === '.' || name === '..') {
+      return fail('InvalidArgument', `${url} does not name one item inside a calendar`);
+    }
     const parent = new URL('.', target);
     const inList = (list: CalDavCalendar[]) => list.some((c) => sameResource(c.url, parent));
     if (this.#calendarCache && inList(this.#calendarCache)) return ok(null);
@@ -538,7 +551,7 @@ export class QueryEngine {
     }
     const edited = edit(root);
     if (!edited.success) return edited;
-    const written = await this.#client.updateObject(object.url, serializeIcal(root), etag);
+    const written = await this.#client.updateObject(url, serializeIcal(root), etag);
     if (!written.success) return caldavFail(written);
     const newEtag = await this.#etagAfterWrite(written.output.url, written.output.etag);
     return ok({ write: { url: written.output.url, etag: newEtag }, root, result: edited.output });

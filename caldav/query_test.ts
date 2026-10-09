@@ -419,3 +419,38 @@ Deno.test('renaming and completing in one call raises SEQUENCE once', async () =
   const data = fake.objects.get(ZONED_PATH)!.data;
   assert(data.includes('\r\nSEQUENCE:1\r\n'), data);
 });
+
+Deno.test('an encoded path step, a backslash or a query in an item URL is refused unsent', async () => {
+  const { engine, fake } = setup();
+  const probes = [
+    url(`${TASKS}..%2F..%2F..%2Fapi%2Fprincipal%2Fsomeone`),
+    url(`${TASKS}..%5C..%5Capi%5Cx`),
+    url(`${TASKS}x.ics?x=/api/principal`),
+  ];
+  unwrap(await engine.listCalendars());
+  fake.requests.length = 0;
+  for (const probe of probes) {
+    assertEquals((await engine.getTodo(probe)).error?.code, 'InvalidArgument', probe);
+    assertEquals((await engine.deleteObject(probe, '"anything"')).error?.code, 'InvalidArgument');
+  }
+  assertEquals(fake.requests, []);
+});
+
+Deno.test('an update is written to the URL that was checked, not to where a read redirected', async () => {
+  const { engine, fake } = setup();
+  const moved = `${TASKS}moved.ics`;
+  fake.objects.set(moved, { etag: ZONED_ETAG, data: ZONED });
+  const original = fake.fetch;
+  fake.fetch = (input, init) => {
+    const request = new Request(input, init);
+    if (request.method === 'GET' && new URL(request.url).pathname === ZONED_PATH) {
+      return Promise.resolve(
+        new Response(null, { status: 301, headers: { Location: url(moved) } }),
+      );
+    }
+    return original(input, init);
+  };
+  unwrap(await engine.updateTodo(url(ZONED_PATH), ZONED_ETAG, { priority: 4 }));
+  const puts = fake.requests.filter((r) => r.method === 'PUT').map((r) => r.url);
+  assertEquals(puts, [url(ZONED_PATH)]);
+});
