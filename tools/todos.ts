@@ -1,7 +1,7 @@
 // ── Todo tools: query_todos, get_todo, create_todo, update_todo, delete_todo ──
 
 import { AlarmRelated } from '@spy4x/time/ical-tasks';
-import type { McpHandler } from '../mcp.ts';
+import type { ToolRegistry } from './index.ts';
 import { DEFAULT_LIMIT, MAX_LIMIT, type QueryEngine, type TodoChange } from '../caldav/query.ts';
 import {
   alarmsSchema,
@@ -86,7 +86,7 @@ function readChange(args: Args): TodoChange {
   return change;
 }
 
-export function registerTodoTools(mcp: McpHandler, engine: QueryEngine): void {
+export function registerTodoTools(mcp: ToolRegistry, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'query_todos',

@@ -80,7 +80,7 @@ The ones you must set:
 | `CALDAV_USERNAME` | `user`                    |
 | `CALDAV_PASSWORD` | `pass`                    |
 
-The HTTP port, the bearer token, OAuth and the log level are optional: see
+The HTTP port, the bearer token, OAuth, the log level and `CALDAV_MCP_TOOLS` are optional: see
 [configuration.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/configuration.md).
 Every variable is listed with a placeholder in [`.env.example`](.env.example).
 
@@ -117,12 +117,19 @@ unset AUTH_PEPPER
 | `AUTH_PEPPER`         | The pepper from step 2                                      |
 | `OAUTH_KV_PATH`       | Optional. Where tokens are kept; default `/data/oauth.kv`   |
 | `HOST`                | `0.0.0.0` in a container                                    |
+| `CALDAV_MCP_TOOLS`    | Optional. `no-delete` or `read-only`; default `all`         |
 
 Set all three OAuth variables or none: with one or two the server refuses to start and names the
 missing ones. With OAuth on, `/mcp` refuses `MCP_BEARER_TOKEN` and answers it like any wrong token,
 so a public server cannot be entered with a leaked static token; leave it unset there. A server that
 also serves clients with the static token, such as OpenWebUI, must say so with
 `ALLOW_BEARER_TOKEN_WITH_OAUTH=true`.
+
+Every connector that signs in gets every tool the server offers; the server has no per-connector
+scopes. A stolen token for a full server could delete every calendar and every task in the account.
+`CALDAV_MCP_TOOLS=no-delete` leaves `delete_calendar`, `delete_event` and `delete_todo` out of the
+tool list and refuses calls to them; `read-only` also leaves out every tool that creates or changes
+something. The setting applies to every client of that server. Any other value stops startup.
 
 The server keeps grants and tokens in a Deno KV file, `/data/oauth.kv` by default, so mount a
 writable volume at `/data` (`compose.yml` does). Its directory must exist: if the file cannot be

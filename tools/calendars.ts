@@ -1,12 +1,12 @@
 // ── Calendar tools: list_calendars, make_calendar, delete_calendar ──
 
-import type { McpHandler } from '../mcp.ts';
+import type { ToolRegistry } from './index.ts';
 import type { QueryEngine } from '../caldav/query.ts';
 import { optionalString, reply, requiredString } from './args.ts';
 
 const COMPONENTS = ['VEVENT', 'VTODO', 'VJOURNAL'];
 
-export function registerCalendarTools(mcp: McpHandler, engine: QueryEngine): void {
+export function registerCalendarTools(mcp: ToolRegistry, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'list_calendars',
