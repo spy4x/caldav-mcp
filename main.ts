@@ -10,14 +10,14 @@ import {
   bearerTokenFromHeaders,
   createTokenVerifier,
   formatLogLine,
-} from 'jsr:@spy4x/server@1.40.0/http/bearer-auth';
-import { createMemoryRateLimiter } from 'jsr:@spy4x/platform@1.40.0/rate-limit/memory';
-import { clientIp, clientIpBucket } from 'jsr:@spy4x/platform@1.40.0/rate-limit/client-ip';
+} from '@spy4x/server/http/bearer-auth';
+import { createMemoryRateLimiter } from '@spy4x/platform/rate-limit/memory';
+import { clientIp, clientIpBucket } from '@spy4x/platform/rate-limit/client-ip';
 import {
   BodyReadTimeoutError,
   PayloadTooLargeError,
   readBoundedText,
-} from 'jsr:@spy4x/net@1.40.0/bounded-body';
+} from '@spy4x/net/bounded-body';
 
 export const VERSION = '0.1.0';
 
