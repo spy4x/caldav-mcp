@@ -11,12 +11,21 @@ All settings are environment variables, read once at startup.
 | `PORT` | `3000` | HTTP port (for `--http` mode) |
 | `MCP_BEARER_TOKEN` | — | Token for HTTP mode. Required there: without it `--http` refuses to start. Setting it also turns HTTP mode on |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `PUBLIC_URL` | — | OAuth: the server's public origin, like `https://caldav-mcp.example.com`. The MCP endpoint is this plus `/mcp`. Set with the next two, or none of the three |
+| `OWNER_PASSWORD_HASH` | — | OAuth: the hash of the password you type to approve a connector. Never the password itself; [how to make it](../README.md#use-it-from-claudeai) |
+| `AUTH_PEPPER` | — | OAuth: a random secret of at least 32 characters the hash is made with. Changing it invalidates the hash |
 | `TRUSTED_PROXIES` | — | Comma-separated CIDR ranges of the reverse proxies in front of HTTP mode, like `172.16.0.0/12` for a Docker network. `X-Forwarded-For` is read only from a peer inside them, so the rate limit counts each client behind the proxy separately. Empty trusts no one: any client could forge the header |
 
 ## HTTP mode
 
-HTTP mode answers JSON-RPC messages posted to `/mcp`, one message per request. `/health` needs no
-token. Every other route needs `MCP_BEARER_TOKEN`, sent as one of:
+HTTP mode speaks Streamable HTTP on `/mcp`: each POST carries one JSON-RPC message or a batch and
+gets a JSON answer, or `202` when it held only notifications. The answer to `initialize` carries an
+`Mcp-Session-Id` header; the server keeps no state per session, so later requests work with or
+without it. A `MCP-Protocol-Version` header the server does not speak gets `400`. `GET /mcp` gets
+`405`: the server never starts a stream of its own.
+
+`/health` needs no token. Every other route needs `MCP_BEARER_TOKEN` or, with OAuth on, an access
+token from the OAuth flow. The static token is sent as one of:
 
 - `Authorization: Bearer <token>`
 - `Authorization: <token>`
@@ -27,6 +36,23 @@ A failed login is logged without the value the client sent, and every line writt
 logger has the token and the CalDAV password redacted.
 
 A client is its IP address: the connecting peer, or the first `X-Forwarded-For` hop when the peer
-is in `TRUSTED_PROXIES`. Each client may send 10 wrong tokens per minute; after that every request
+is in `TRUSTED_PROXIES`. Each client may send 10 wrong tokens or refused consent forms per minute; after that every request
 from it gets `429` with `Retry-After` until the minute is over, before its token is even checked.
 Each client may also send 100 authorized requests per minute. A request body over 1 MiB gets `413`.
+
+## OAuth
+
+Set `PUBLIC_URL`, `OWNER_PASSWORD_HASH` and `AUTH_PEPPER` together and the server becomes its own
+OAuth authorization server, so claude.ai and the Claude apps can connect to it as a remote
+connector. Setting one or two of them stops startup with the names of the missing ones. The setup
+is in the README, [Use it from claude.ai](../README.md#use-it-from-claudeai).
+
+With OAuth on:
+
+- `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`
+  describe the server; `/authorize` shows the consent page and `/token` hands out tokens.
+- A request to `/mcp` without a valid token gets `401` with
+  `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_URL>/.well-known/oauth-protected-resource/mcp"`.
+- `MCP_BEARER_TOKEN` keeps working next to OAuth, so clients such as OpenWebUI need no change.
+- Tokens live in memory. A restart signs every connector out, and each one asks you to approve it
+  again the next time it connects.

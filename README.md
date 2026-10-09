@@ -33,12 +33,12 @@ and pulled in a large npm install. I run it on my own homelab next to my calenda
   overdue?" is one request, not one per calendar.
 - **Answers an assistant can use.** Queries return totals, counts by status and priority and the
   number of overdue tasks next to the list, capped at 200 items with a `truncated` flag.
-- **No third-party dependencies.** Built on Deno and web standards (Fetch, Streams, ES modules):
-  no npm install, no `node_modules`.
+- **No npm install.** Built on Deno and web standards (Fetch, Streams, ES modules); the only
+  outside library is [Hono](https://hono.dev), under the OAuth routes. No `node_modules`.
 - **One binary.** Deno compiles it into a single executable, or runs it straight from a pinned
   URL. Docker and systemd setups are in [self-hosting.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/self-hosting.md).
-- **Local or remote.** stdio for desktop clients, or HTTP with a bearer token for OpenWebUI and
-  other networked clients.
+- **Local or remote.** stdio for desktop clients, or Streamable HTTP with a bearer token or OAuth
+  for claude.ai, the Claude phone app, OpenWebUI and other networked clients.
 
 **Use it if** your calendar lives on a CalDAV server you can reach with a username and password,
 such as Radicale. **Skip it if** you need Google Calendar (its CalDAV API needs OAuth), contacts
@@ -79,8 +79,56 @@ The ones you must set:
 | `CALDAV_USERNAME` | `user`                    |
 | `CALDAV_PASSWORD` | `pass`                    |
 
-The HTTP port, the bearer token and the log level are optional: see
+The HTTP port, the bearer token, OAuth and the log level are optional: see
 [configuration.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/configuration.md).
+Every variable is listed with a placeholder in [`.env.example`](.env.example).
+
+## Use it from claude.ai
+
+claude.ai, Claude Desktop and the Claude phone app can use caldav-mcp as a remote connector. They
+sign in with OAuth, and you approve each one with your own password.
+
+**1. Give it a public HTTPS address.** claude.ai connects from the internet, so the server needs a
+URL such as `https://caldav-mcp.example.com`, usually a reverse proxy (Traefik, Caddy, nginx) that
+terminates TLS in front of the container. Set `TRUSTED_PROXIES` to the proxy's network so the rate
+limit sees each client's own address.
+
+**2. Make the owner password hash.** Pick a pepper, a random secret of at least 32 characters, for
+example `openssl rand -base64 48`. Then hash your password with it. The command reads the password
+from standard input, so it stays out of your shell history:
+
+```bash
+read -rs PW && printf %s "$PW" | AUTH_PEPPER='<your pepper>' deno eval \
+  'import { createPasswordHasher } from "jsr:@spy4x/server@1.45.0/sign-in";
+   const password = await new Response(Deno.stdin.readable).text();
+   console.log(await createPasswordHasher({ pepper: Deno.env.get("AUTH_PEPPER")! }).hash(password));'
+unset PW
+```
+
+**3. Set the env vars and start it in HTTP mode.**
+
+| Variable              | Value                                                       |
+| --------------------- | ----------------------------------------------------------- |
+| `PUBLIC_URL`          | The public origin, `https://caldav-mcp.example.com`, no path |
+| `OWNER_PASSWORD_HASH` | The `pbkdf2-sha256$…` line step 2 printed                   |
+| `AUTH_PEPPER`         | The pepper from step 2                                      |
+| `HOST`                | `0.0.0.0` in a container                                    |
+
+Set all three OAuth variables or none: with one or two the server refuses to start and names the
+missing ones. `MCP_BEARER_TOKEN` is optional with OAuth on, and keeps working for clients that use
+it, such as OpenWebUI.
+
+**4. Add the connector.** In claude.ai open Settings → Connectors → Add custom connector, and enter
+the URL with `/mcp` on the end: `https://caldav-mcp.example.com/mcp`. Leave the OAuth client ID and
+secret empty.
+
+**5. Sign in.** Claude opens a consent page on your server. It shows who is asking and where the
+approval goes (`claude.ai`). Type your owner password and press **Allow**. A wrong password gets
+"Only the owner can approve access"; go back and try again. After 10 failed tries in a minute the
+server answers `429` until the minute is over. Claude then lists the tools, and the connector works
+in the Claude apps on every device signed in to your account.
+
+The server keeps its tokens in memory: after a restart Claude asks you to approve it again.
 
 ## Development
 
