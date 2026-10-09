@@ -1,104 +1,74 @@
-// ── Calendar tools: list_calendars, make_calendar ──
+// ── Calendar tools: list_calendars, make_calendar, delete_calendar ──
 
 import type { McpHandler } from '../mcp.ts';
 import type { QueryEngine } from '../caldav/query.ts';
-import { ComponentType } from '../caldav/types.ts';
+import { optionalString, reply, requiredString } from './args.ts';
 
-const COMPONENT_LABELS: Record<number, string> = {
-  [ComponentType.VEVENT]: 'VEVENT',
-  [ComponentType.VTODO]: 'VTODO',
-  [ComponentType.VJOURNAL]: 'VJOURNAL',
-};
+const COMPONENTS = ['VEVENT', 'VTODO', 'VJOURNAL'];
 
 export function registerCalendarTools(mcp: McpHandler, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'list_calendars',
-      description: 'List all available calendars with their component types and colors',
+      description: 'List the calendars with the components they hold (empty means any) and colors',
       inputSchema: { type: 'object', properties: {} },
     },
-    async () => {
-      const calendars = await engine.listCalendars();
-      return calendars.map((c) => ({
-        url: c.url,
-        displayName: c.displayName,
-        components: c.components.map((ct) => COMPONENT_LABELS[ct] || 'UNKNOWN'),
-        color: c.color || null,
-        description: c.description || null,
-        ctag: c.ctag || null,
-      }));
-    },
+    async () => reply(await engine.listCalendars()),
   );
 
   mcp.registerTool(
     {
       name: 'delete_calendar',
-      description: 'Delete a calendar collection and all its events/todos',
+      description: 'Delete a calendar and every event and task in it. Only a URL that ' +
+        'list_calendars returns is accepted.',
       inputSchema: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'Calendar URL to delete' },
+          url: { type: 'string', description: 'Calendar URL from list_calendars' },
         },
         required: ['url'],
       },
     },
-    async (args: Record<string, unknown>) => {
-      const url = args['url'] as string;
-      if (!url) return { error: 'url is required' };
-
-      try {
-        await engine['client'].deleteResource(url);
-        return { success: true, url };
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : String(err) };
-      }
+    async (args) => {
+      const deleted = reply(await engine.deleteCalendar(requiredString(args, 'url')));
+      return 'error' in deleted ? deleted : { success: true, url: deleted.url };
     },
   );
 
   mcp.registerTool(
     {
       name: 'make_calendar',
-      description: 'Create a new calendar collection',
+      description: "Create a calendar in the user's calendar home. Returns its url.",
       inputSchema: {
         type: 'object',
         properties: {
           displayName: { type: 'string', description: 'Calendar display name' },
           components: {
             type: 'array',
-            items: { type: 'string', enum: ['VEVENT', 'VTODO', 'VJOURNAL'] },
-            description: 'Supported component types (default: VEVENT,VTODO)',
+            items: { type: 'string', enum: COMPONENTS },
+            description: 'Component types it holds (default: VEVENT, VTODO)',
           },
-          color: { type: 'string', description: 'Calendar color hex (e.g. #FF542B)' },
-          description: { type: 'string', description: 'Calendar description' },
+          color: { type: 'string', description: 'Color, such as #FF542B' },
         },
         required: ['displayName'],
       },
     },
-    async (args: Record<string, unknown>) => {
-      const displayName = args['displayName'] as string;
-      const components = (args['components'] as string[]) || ['VEVENT', 'VTODO'];
-      const color = args['color'] as string | undefined;
-      const description = args['description'] as string | undefined;
-
-      // Discover parent path from an existing calendar URL (Radicale convention: /{user}/)
-      const baseUrl = engine.client['baseUrl'];
-      const username = engine.client['username'];
-      const calendars = await engine.listCalendars();
-      let parentUrl: string;
-      if (calendars.length > 0) {
-        const firstUrl = new URL(calendars[0]!.url);
-        const pathParts = firstUrl.pathname.split('/').filter(Boolean);
-        parentUrl = pathParts.length >= 2
-          ? `${firstUrl.origin}/${pathParts[0]!}/`
-          : `${firstUrl.origin}/`;
-      } else {
-        // Fallback: use base URL + username path (Radicale convention)
-        parentUrl = `${baseUrl}/${username}/`;
+    async (args) => {
+      const components = args['components'] ?? ['VEVENT', 'VTODO'];
+      if (
+        !Array.isArray(components) || components.length === 0 ||
+        !components.every((c) => COMPONENTS.includes(c))
+      ) {
+        throw new Error(`components must be a non-empty array of ${COMPONENTS.join(', ')}`);
       }
-
-      await engine['client'].makeCalendar(parentUrl, displayName, components, color, description);
-
-      return { success: true, url: `${parentUrl}${encodeURIComponent(displayName)}/`, displayName };
+      const made = reply(
+        await engine.makeCalendar(
+          requiredString(args, 'displayName'),
+          components,
+          optionalString(args, 'color'),
+        ),
+      );
+      return 'error' in made ? made : { success: true, ...made };
     },
   );
 }

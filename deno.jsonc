@@ -1,6 +1,8 @@
 {
   "version": "0.1.0",
   "description": "Lightweight CalDAV MCP server — events + todos for AI agents",
+  // Our own @spy4x/* releases resolve at once; everything else waits a day (supply-chain guard).
+  "minimumDependencyAge": { "age": "1440", "exclude": ["jsr:@spy4x/*"] },
   "tasks": {
     "start": "deno run -A main.ts",
     "dev": "deno run --watch -A main.ts",
@@ -26,6 +28,8 @@
     "singleQuote": true
   },
   "imports": {
-    "std/": "https://deno.land/std@0.224.0/"
+    "std/": "https://deno.land/std@0.224.0/",
+    "@spy4x/caldav": "jsr:@spy4x/caldav@1.42.0",
+    "@spy4x/time": "jsr:@spy4x/time@1.42.0"
   }
 }

@@ -1,166 +1,168 @@
 // ── Event tools: query_events, get_event, create_event, update_event, delete_event ──
 
+import type { EventPatch } from '@spy4x/time/ical-tasks';
 import type { McpHandler } from '../mcp.ts';
-import type { QueryEngine } from '../caldav/query.ts';
+import { DEFAULT_LIMIT, MAX_LIMIT, type QueryEngine } from '../caldav/query.ts';
+import {
+  type Args,
+  dateSchema,
+  nullableDate,
+  nullableString,
+  nullableStringList,
+  optionalInstant,
+  optionalInteger,
+  optionalString,
+  reply,
+  requiredString,
+} from './args.ts';
+
+const ETAG_NOTE = 'exactly as query_events or get_event returned it, quotes included';
+
+function eventFields(nullable: boolean) {
+  const t = (type: string) => (nullable ? [type, 'null'] : type);
+  const clear = nullable ? '; null clears it' : '';
+  return {
+    summary: { type: 'string', description: 'Title' },
+    description: { type: t('string'), description: `Notes${clear}` },
+    location: { type: t('string'), description: `Location${clear}` },
+    start: dateSchema('Start'),
+    end: dateSchema('End', nullable),
+    categories: { type: t('array'), items: { type: 'string' }, description: `Tags${clear}` },
+    rrule: { type: t('string'), description: `Repeat rule, such as FREQ=WEEKLY;BYDAY=TU${clear}` },
+  };
+}
+
+function readPatch(args: Args): EventPatch {
+  const patch: EventPatch = {
+    summary: nullableString(args, 'summary'),
+    description: nullableString(args, 'description'),
+    location: nullableString(args, 'location'),
+    start: nullableDate(args, 'start'),
+    end: nullableDate(args, 'end'),
+    categories: nullableStringList(args, 'categories'),
+    rrule: nullableString(args, 'rrule'),
+  };
+  if (patch.summary === null) throw new Error('summary cannot be cleared');
+  if (patch.start === null) throw new Error('start cannot be cleared');
+  for (const key of Object.keys(patch) as (keyof EventPatch)[]) {
+    if (patch[key] === undefined) delete patch[key];
+  }
+  return patch;
+}
 
 export function registerEventTools(mcp: McpHandler, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'query_events',
-      description: 'Search events across all calendars. Returns summary + list.',
+      description: 'Search events across all calendars. Returns counts and a compact list ' +
+        'sorted by start.',
       inputSchema: {
         type: 'object',
         properties: {
-          calendarUrl: { type: 'string', description: 'Optional: filter by calendar URL' },
-          dateFrom: {
-            type: 'string',
-            description: 'ISO date — return events starting on or after this',
+          calendarUrl: { type: 'string', description: 'Only this calendar (from list_calendars)' },
+          dateFrom: dateSchema('Only events that end after this'),
+          dateTo: dateSchema('Only events that start before this'),
+          text: { type: 'string', description: 'Text in summary, description or location' },
+          limit: {
+            type: 'integer',
+            description: `Most events listed (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT})`,
           },
-          dateTo: {
-            type: 'string',
-            description: 'ISO date — return events starting on or before this',
-          },
-          text: { type: 'string', description: 'Search text in summary/description' },
         },
       },
     },
-    (args: Record<string, unknown>) => {
-      return engine.queryEvents({
-        calendarUrl: args['calendarUrl'] as string | undefined,
-        dateFrom: args['dateFrom'] as string | undefined,
-        dateTo: args['dateTo'] as string | undefined,
-        text: args['text'] as string | undefined,
-      });
-    },
+    async (args) =>
+      reply(
+        await engine.queryEvents({
+          calendarUrl: optionalString(args, 'calendarUrl'),
+          from: optionalInstant(args, 'dateFrom'),
+          to: optionalInstant(args, 'dateTo'),
+          text: optionalString(args, 'text'),
+          limit: optionalInteger(args, 'limit', 1, MAX_LIMIT),
+        }),
+      ),
   );
 
   mcp.registerTool(
     {
       name: 'get_event',
-      description: 'Get a single event by URL',
+      description: 'Get one event by URL with every field and the etag to edit it with',
       inputSchema: {
         type: 'object',
-        properties: {
-          url: { type: 'string', description: 'Event URL' },
-        },
+        properties: { url: { type: 'string', description: 'Event URL from query_events' } },
         required: ['url'],
       },
     },
-    async (args: Record<string, unknown>) => {
-      const url = args['url'] as string;
-      const event = await engine.getEvent(url);
-      if (!event) return { error: 'Event not found' };
-      return event;
-    },
+    async (args) => reply(await engine.getEvent(requiredString(args, 'url'))),
   );
 
   mcp.registerTool(
     {
       name: 'create_event',
-      description: 'Create a new event in a calendar',
+      description: 'Create an event in a calendar. Returns its url, uid and etag.',
       inputSchema: {
         type: 'object',
         properties: {
-          calendarUrl: { type: 'string', description: 'Calendar URL' },
-          summary: { type: 'string', description: 'Event summary/title' },
-          description: { type: 'string', description: 'Event description' },
-          start: { type: 'string', description: 'ISO start datetime' },
-          end: { type: 'string', description: 'ISO end datetime' },
-          location: { type: 'string', description: 'Event location' },
+          calendarUrl: { type: 'string', description: 'Calendar URL from list_calendars' },
+          uid: { type: 'string', description: 'UID to give the event; default: a new UUID' },
+          ...eventFields(false),
         },
         required: ['calendarUrl', 'summary', 'start', 'end'],
       },
     },
-    async (args: Record<string, unknown>) => {
-      const calendarUrl = args['calendarUrl'] as string;
-      const summary = args['summary'] as string;
-      const start = args['start'] as string;
-      const end = args['end'] as string;
-
-      if (!calendarUrl || !summary || !start || !end) {
-        return { error: 'calendarUrl, summary, start, and end are required' };
-      }
-
-      const result = await engine.createEvent(calendarUrl, {
-        summary,
-        description: args['description'] as string | undefined,
-        start,
-        end,
-        location: args['location'] as string | undefined,
-      });
-
-      return { success: true, url: result.url, etag: result.etag };
+    async (args) => {
+      const calendarUrl = requiredString(args, 'calendarUrl');
+      requiredString(args, 'summary');
+      requiredString(args, 'start');
+      requiredString(args, 'end');
+      return reply(
+        await engine.createEvent(calendarUrl, readPatch(args), optionalString(args, 'uid')),
+      );
     },
   );
 
   mcp.registerTool(
     {
       name: 'update_event',
-      description: 'Update an existing event by URL + ETag',
+      description: 'Change an event. Only the fields you pass change; guests, reminders, repeat ' +
+        'rules, time zones and exceptions are kept. Pass null to clear a field. Fails with code ' +
+        'Conflict when the event changed since you read it.',
       inputSchema: {
         type: 'object',
         properties: {
           url: { type: 'string', description: 'Event URL' },
-          etag: { type: 'string', description: 'Current ETag' },
-          summary: { type: 'string', description: 'New summary' },
-          description: { type: 'string', description: 'New description' },
-          start: { type: 'string', description: 'New start (ISO)' },
-          end: { type: 'string', description: 'New end (ISO)' },
-          location: { type: 'string', description: 'New location' },
+          etag: { type: 'string', description: `Current etag, ${ETAG_NOTE}` },
+          ...eventFields(true),
         },
         required: ['url', 'etag'],
       },
     },
-    async (args: Record<string, unknown>) => {
-      const url = args['url'] as string;
-      const etag = args['etag'] as string;
-
-      if (!url || !etag) {
-        return { error: 'url and etag are required' };
-      }
-
-      try {
-        const newEtag = await engine.updateEvent(url, etag, {
-          summary: args['summary'] as string | undefined,
-          description: args['description'] as string | undefined,
-          start: args['start'] as string | undefined,
-          end: args['end'] as string | undefined,
-          location: args['location'] as string | undefined,
-        });
-        return { success: true, etag: newEtag };
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : String(err) };
-      }
-    },
+    async (args) =>
+      reply(
+        await engine.updateEvent(
+          requiredString(args, 'url'),
+          requiredString(args, 'etag'),
+          readPatch(args),
+        ),
+      ),
   );
 
   mcp.registerTool(
     {
       name: 'delete_event',
-      description: 'Delete an event by URL + ETag',
+      description: 'Delete an event if it has not changed since you read it',
       inputSchema: {
         type: 'object',
         properties: {
           url: { type: 'string', description: 'Event URL' },
-          etag: { type: 'string', description: 'Current ETag' },
+          etag: { type: 'string', description: `Current etag, ${ETAG_NOTE}` },
         },
         required: ['url', 'etag'],
       },
     },
-    async (args: Record<string, unknown>) => {
-      const url = args['url'] as string;
-      const etag = args['etag'] as string;
-
-      if (!url) {
-        return { error: 'url is required' };
-      }
-
-      try {
-        await engine.deleteEvent(url, etag);
-        return { success: true };
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : String(err) };
-      }
+    async (args) => {
+      const url = requiredString(args, 'url');
+      const deleted = reply(await engine.deleteObject(url, requiredString(args, 'etag')));
+      return deleted === null ? { success: true, url } : deleted;
     },
   );
 }

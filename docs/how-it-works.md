@@ -51,14 +51,15 @@ caldav-mcp/
 ├── mcp.ts            # MCP protocol (JSON-RPC 2.0, versions 2024-11-05 to 2025-06-18)
 ├── env.ts            # Config from environment variables
 ├── caldav/
-│   ├── client.ts     # CalDAV HTTP client (PROPFIND, REPORT, PUT, DELETE)
-│   ├── xml.ts        # XML builders for CalDAV/WebDAV requests
-│   ├── ical.ts       # iCal parser + generator (RFC 5545)
-│   └── query.ts      # Parallel query engine + aggregation
+│   ├── query.ts      # Query engine on @spy4x/caldav + @spy4x/time/ical-tasks
+│   ├── dates.ts      # Date text in tool arguments and answers
+│   ├── types.ts      # Shapes the tools return
+│   └── testing/      # In-memory Stalwart-shaped server and fixtures for tests
 ├── tools/
-│   ├── calendars.ts  # list_calendars, make_calendar
+│   ├── calendars.ts  # list_calendars, make_calendar, delete_calendar
 │   ├── todos.ts      # CRUD for VTODO
-│   └── events.ts     # CRUD for VEVENT
+│   ├── events.ts     # CRUD for VEVENT
+│   └── args.ts       # Argument checks; a bad argument is an isError result
 ├── Dockerfile        # Multistage → distroless (89MB)
 └── deno.jsonc
 ```
