@@ -14,6 +14,7 @@ All settings are environment variables, read once at startup.
 | `PUBLIC_URL` | — | OAuth: the server's public origin, like `https://caldav-mcp.example.com`. The MCP endpoint is this plus `/mcp`. Set with the next two, or none of the three |
 | `OWNER_PASSWORD_HASH` | — | OAuth: the hash of the password you type to approve a connector. Never the password itself; [how to make it](../README.md#use-it-from-claudeai) |
 | `AUTH_PEPPER` | — | OAuth: a random secret of at least 32 characters the hash is made with. Changing it invalidates the hash |
+| `OAUTH_KV_PATH` | `/data/oauth.kv` | OAuth: the Deno KV file that keeps grants and tokens across restarts. Its directory must exist and be writable; the server refuses to start otherwise |
 | `TRUSTED_PROXIES` | — | Comma-separated CIDR ranges of the reverse proxies in front of HTTP mode, like `172.16.0.0/12` for a Docker network. `X-Forwarded-For` is read only from a peer inside them, so the rate limit counts each client behind the proxy separately. Empty trusts no one: any client could forge the header |
 
 ## HTTP mode
@@ -57,7 +58,9 @@ With OAuth on:
 - Only clients whose `client_id` is on `claude.ai` can sign in: the Claude apps and Claude Code.
   A `client_id` on any other host gets `400` before anything is fetched.
 - Each client may open 10 consent pages a minute; the next one gets `429` until the minute is over.
-  Wrong owner passwords count toward the same 10 a minute as wrong tokens.
+- After 10 wrong owner passwords in 15 minutes, counted for the whole server, every approval gets
+  `429` until the window ends. Someone who can reach the page can therefore keep you from approving
+  a new connector for a while; connectors already signed in keep working.
 - `MCP_BEARER_TOKEN` keeps working next to OAuth, so clients such as OpenWebUI need no change.
-- Tokens live in memory. A restart signs every connector out, and each one asks you to approve it
-  again the next time it connects.
+- Grants and tokens live in Deno KV at `OAUTH_KV_PATH`, so a restart keeps connectors signed in.
+  The server runs with `--unstable-kv` for this (the tasks and the Docker image set it).

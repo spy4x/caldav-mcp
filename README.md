@@ -95,18 +95,14 @@ terminates TLS in front of the container. Set `TRUSTED_PROXIES` to the proxy's n
 limit sees each client's own address.
 
 **2. Make the owner password hash.** Use a long random owner password, for example 24 or more
-characters from a password manager. The server limits wrong passwords to 10 a minute per client
-address, but someone with many addresses can try more, so the length is what keeps it safe. Pick a
-pepper, a random secret of at least 32 characters, for
-example `openssl rand -base64 48`. Then hash your password with it. The command reads the password
-from standard input, so it stays out of your shell history:
+characters from a password manager. After 10 wrong passwords in 15 minutes the server stops
+accepting approvals until the 15 minutes are over, so guessing is slow, but a long password is what
+keeps it safe. Pick a pepper, a random secret of at least 32 characters, for example
+`openssl rand -base64 48`. Then hash your password with it, from a checkout of this repository. The
+task asks for the password without echoing it, so it stays out of your shell history:
 
 ```bash
-read -rs PW && printf %s "$PW" | AUTH_PEPPER='<your pepper>' deno eval \
-  'import { createPasswordHasher } from "jsr:@spy4x/server@1.45.0/sign-in";
-   const password = await new Response(Deno.stdin.readable).text();
-   console.log(await createPasswordHasher({ pepper: Deno.env.get("AUTH_PEPPER")! }).hash(password));'
-unset PW
+AUTH_PEPPER='<your pepper>' deno task password:hash
 ```
 
 **3. Set the env vars and start it in HTTP mode.**
@@ -116,23 +112,27 @@ unset PW
 | `PUBLIC_URL`          | The public origin, `https://caldav-mcp.example.com`, no path |
 | `OWNER_PASSWORD_HASH` | The `pbkdf2-sha256$…` line step 2 printed                   |
 | `AUTH_PEPPER`         | The pepper from step 2                                      |
+| `OAUTH_KV_PATH`       | Optional. Where tokens are kept; default `/data/oauth.kv`   |
 | `HOST`                | `0.0.0.0` in a container                                    |
 
 Set all three OAuth variables or none: with one or two the server refuses to start and names the
 missing ones. `MCP_BEARER_TOKEN` is optional with OAuth on, and keeps working for clients that use
 it, such as OpenWebUI.
 
+The server keeps grants and tokens in a Deno KV file, `/data/oauth.kv` by default, so mount a
+writable volume at `/data` (`compose.yml` does). Its directory must exist: if the file cannot be
+opened, the server refuses to start and names the path.
+
 **4. Add the connector.** In claude.ai open Settings → Connectors → Add custom connector, and enter
 the URL with `/mcp` on the end: `https://caldav-mcp.example.com/mcp`. Leave the OAuth client ID and
 secret empty.
 
 **5. Sign in.** Claude opens a consent page on your server. It shows who is asking and where the
-approval goes (`claude.ai`). Type your owner password and press **Allow**. A wrong password gets
-"Only the owner can approve access"; go back and try again. After 10 failed tries in a minute the
-server answers `429` until the minute is over. Claude then lists the tools, and the connector works
-in the Claude apps on every device signed in to your account.
-
-The server keeps its tokens in memory: after a restart Claude asks you to approve it again.
+approval goes (`claude.ai`). Type your owner password and press **Allow**. A wrong password shows
+the page again with "Wrong password. Try again." After 10 wrong passwords in 15 minutes, from anyone,
+approvals get `429` until the 15 minutes are over; connectors already signed in keep working. Claude
+then lists the tools, and the connector works in the Claude apps on every device signed in to your
+account. A restart or a redeploy keeps it signed in.
 
 ## Development
 
