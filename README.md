@@ -149,6 +149,11 @@ connector works in the Claude apps on every device signed in to your account. A 
 redeploy keeps it signed in. Each sign-in lasts 90 days from your approval; after that, Claude
 asks you to sign in again.
 
+Never approve a consent page you did not open yourself, even one on your own server: someone else
+can start a sign-in and send you its link. If you did approve one, run `caldav-mcp grants list` and
+revoke any grant you do not recognise with `caldav-mcp grants revoke <grantId>` (see
+[Sign a connector out](#sign-a-connector-out)).
+
 Anyone who can reach the server can still keep you from approving a connector. 100 wrong passwords
 in a day from all addresses together block every approval for up to 24 hours, and one address can
 send them slowly enough to stay under its own limit. The block lasts as long as they keep sending,
