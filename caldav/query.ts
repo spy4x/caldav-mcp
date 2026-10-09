@@ -316,14 +316,15 @@ export class QueryEngine {
     if (/[?#]/.test(url)) {
       return fail('InvalidArgument', `${url} has a query or fragment; pass the url as listed`);
     }
-    // An encoded separator or dot segment could step out of the calendar on the server.
+    // An encoded separator could step out of the calendar on the server. Dot segments need no
+    // check: `new URL` resolves `.`, `..` and their `%2e` spellings before this runs.
     let name: string;
     try {
       name = decodeURIComponent(target.pathname.slice(target.pathname.lastIndexOf('/') + 1));
     } catch {
       return fail('InvalidArgument', `${url} has a malformed escape`);
     }
-    if (/[/\\]/.test(name) || name === '.' || name === '..') {
+    if (/[/\\]/.test(name)) {
       return fail('InvalidArgument', `${url} does not name one item inside a calendar`);
     }
     const parent = new URL('.', target);
