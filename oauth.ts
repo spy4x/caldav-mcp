@@ -6,8 +6,8 @@ import { Hono } from 'hono';
 import {
   AUTHORIZATION_SERVER_METADATA_PATH,
   AUTHORIZE_PATH,
-  type ClientMetadataSource,
   createAuthorizationServer,
+  createClientMetadataFetcher,
   createResourceServer,
   defaultConsentPage,
   type OAuthStore,
@@ -16,6 +16,8 @@ import {
 import { MemoryOAuthStore } from '@spy4x/server/mcp-oauth/memory-store';
 import { createPasswordHasher } from '@spy4x/server/sign-in';
 import { parseBoundedFormData } from '@spy4x/net/bounded-body';
+import type { Fetcher } from '@spy4x/net/safe-fetch';
+import type { DnsResolver } from '@spy4x/net/url-policy';
 
 /** The path the MCP endpoint is served at; the OAuth resource is `PUBLIC_URL` plus this path. */
 export const MCP_PATH = '/mcp';
@@ -43,11 +45,22 @@ export interface OAuthConfig {
 }
 
 /** Seams for tests. Production uses the defaults. */
+/**
+ * Hosts a `client_id` may live on. Claude's documents are on claude.ai
+ * (`/oauth/mcp-oauth-client-metadata` for the apps, `/oauth/claude-code-client-metadata` for
+ * Claude Code). Any other host is refused before anything is fetched, so a stranger cannot make
+ * the server send requests to a URL of their choice.
+ */
+export const TRUSTED_CLIENT_HOSTS: readonly string[] = ['claude.ai'];
+
+/** Seams for tests. Production uses the defaults. */
 export interface OAuthOptions {
   /** Defaults to a {@link MemoryOAuthStore}: a restart signs every connector out. */
   store?: OAuthStore;
-  /** Resolves `client_id` URLs. Defaults to the library's fetcher, which fetches them. */
-  clients?: ClientMetadataSource;
+  /** Network seam for fetching client metadata documents. Defaults to the platform `fetch`. */
+  fetcher?: Fetcher;
+  /** DNS seam for the same fetch. Defaults to the system resolver. */
+  resolver?: DnsResolver;
 }
 
 export interface OAuth {
@@ -84,7 +97,11 @@ export function createOAuth(config: OAuthConfig, options: OAuthOptions = {}): OA
     issuer,
     resources: [resource],
     store,
-    ...(options.clients ? { clients: options.clients } : {}),
+    clients: createClientMetadataFetcher({
+      trustedHosts: TRUSTED_CLIENT_HOSTS,
+      fetcher: options.fetcher,
+      resolver: options.resolver,
+    }),
     renderConsent: (details) => withPasswordField(defaultConsentPage(details)),
     async confirmOwner(c) {
       if (c.req.method !== 'POST') return true;
