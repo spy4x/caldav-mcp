@@ -107,7 +107,7 @@ Deno.test('the login goes only to the configured origin, never to a URL property
   unwrap(await engine.updateTodo(url(TASKS_ORG_PATH), TASKS_ORG_ETAG, { summary: 'x' }));
   unwrap(await engine.getEvent(url(MEETING_PATH)));
   const outside = await engine.getTodo('https://evil.example/steal');
-  assertEquals(outside.error?.code, 'OutsideServer');
+  assertEquals(outside.success, false);
   const stolen = await engine.queryTodos({ calendarUrl: 'https://evil.example/cal/' });
   assertEquals(stolen.success, false);
   assert(fake.requests.length > 0);
@@ -351,4 +351,23 @@ Deno.test('a calendar that fails while another answers is listed under failedCal
   const result = unwrap(await engine.queryTodos({}));
   assertEquals(result.total, 0);
   assertEquals(result.failedCalendars?.map((c) => c.url), [url(TASKS)]);
+});
+
+Deno.test('task and event tools refuse a URL outside a listed calendar without sending it', async () => {
+  const { engine, fake } = setup();
+  const targets = [
+    url(TASKS),
+    url('/api/x'),
+    url('/dav/principal/user%40example.com/'),
+    url('/dav/cal/other%40example.com/tasks/theirs.ics'),
+  ];
+  unwrap(await engine.listCalendars());
+  fake.requests.length = 0;
+  for (const target of targets) {
+    assertEquals((await engine.deleteObject(target, '"anything"')).success, false, target);
+    assertEquals((await engine.getTodo(target)).success, false, target);
+    assertEquals((await engine.updateEvent(target, '"anything"', { summary: 'x' })).success, false);
+  }
+  assertEquals(fake.requests.filter((r) => targets.includes(r.url)), []);
+  assert(fake.calendars.has(TASKS));
 });

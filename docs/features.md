@@ -66,8 +66,9 @@ every field, `includeCompleted: true` for finished tasks too, and `limit` (up to
   (`"completed"`). Setting an open status on a done task reopens it.
 - **Errors are errors.** A bad argument or a server refusal comes back as an MCP error result
   (`isError`) with a `code` such as `Conflict`, `NotFound` or `InvalidArgument`.
-- **Your login stays home.** The username and password go only to the configured server, and
-  only addresses that server returned are accepted.
+- **Your login stays home.** The username and password go only to the configured server. Task
+  and event tools accept only an item directly inside a calendar `list_calendars` returns, so
+  they never read, change or delete a whole calendar, a principal or another user's data.
 
 ## Task Relationships (RFC 5545 RELATED-TO)
 

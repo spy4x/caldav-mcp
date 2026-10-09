@@ -246,6 +246,8 @@ export class QueryEngine {
   readonly #zone: string;
   readonly #uid: () => string;
   #homes?: string[];
+  /** The last calendar list, for checking object URLs without a PROPFIND each time. */
+  #calendarCache?: CalDavCalendar[];
 
   constructor(client: CalDavClient, options: EngineOptions = {}) {
     this.#client = client;
@@ -272,7 +274,35 @@ export class QueryEngine {
       if (!listed.success) return caldavFail(listed);
       all.push(...listed.output);
     }
+    this.#calendarCache = all;
     return ok(all);
+  }
+
+  /**
+   * Refuse an object URL that is not directly inside a listed calendar, so a task or event tool
+   * never reads, writes or deletes a calendar, a principal or another user's data. The cached list
+   * is tried first and refreshed once when the calendar is not in it.
+   */
+  async #knownObject(url: string): Promise<EngineResult<null>> {
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch {
+      return fail('InvalidArgument', `url is not a URL: ${url}`);
+    }
+    if (target.pathname.endsWith('/')) {
+      return fail('InvalidArgument', `${url} is a collection, not a task or event`);
+    }
+    const parent = new URL('.', target);
+    const inList = (list: CalDavCalendar[]) => list.some((c) => sameResource(c.url, parent));
+    if (this.#calendarCache && inList(this.#calendarCache)) return ok(null);
+    const calendars = await this.#calendars();
+    if (!calendars.success) return calendars;
+    if (inList(calendars.output)) return ok(null);
+    return fail(
+      'UnknownCalendar',
+      `${url} is not inside one of the calendars list_calendars returns`,
+    );
   }
 
   /** Every calendar of the account. */
@@ -434,6 +464,8 @@ export class QueryEngine {
   }
 
   async #read(url: string): Promise<EngineResult<{ object: CalDavObject; root: IcalComponent }>> {
+    const known = await this.#knownObject(url);
+    if (!known.success) return known;
     const got = await this.#client.getObject(url);
     if (!got.success) return caldavFail(got);
     const parsed = parseIcal(got.output.data);
@@ -572,6 +604,8 @@ export class QueryEngine {
   /** Delete a task or event if it still has `etag`. */
   async deleteObject(url: string, etag: string): Promise<EngineResult<null>> {
     if (!etag) return fail('InvalidArgument', 'etag is required: pass the one get_todo returned');
+    const known = await this.#knownObject(url);
+    if (!known.success) return known;
     const deleted = await this.#client.deleteObject(url, etag);
     return deleted.success ? ok(null) : caldavFail(deleted);
   }
@@ -683,6 +717,7 @@ export class QueryEngine {
     const calendar = await this.#knownCalendar(url);
     if (!calendar.success) return calendar;
     const deleted = await this.#client.deleteCalendar(calendar.output.url);
+    this.#calendarCache = undefined;
     return deleted.success ? ok({ url: calendar.output.url }) : caldavFail(deleted);
   }
 }
