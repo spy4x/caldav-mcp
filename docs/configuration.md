@@ -68,8 +68,9 @@ With OAuth on:
   get `429` until the window ends; the right password from another address still works. After 100
   wrong passwords in 24 hours from all addresses together, every approval gets `429` until the
   oldest of them is a day old. The counts live in `OAUTH_KV_PATH`, so a restart does not reset them.
-  Connectors already signed in keep working. So someone who controls about 10 addresses can still
-  block every approval for up to 24 hours, and longer if they keep sending; the README section [Use
+  Connectors already signed in keep working. So anyone who can reach the server, even from one
+  address sending slowly, can block every approval for up to 24 hours, and longer if they keep
+  sending; the README section [Use
   it from claude.ai](../README.md#use-it-from-claudeai) gives the recovery step (delete the key
   `["mcp-oauth", "attempts", "total"]` with the server stopped), and
   https://github.com/spy4x/ts-libs/issues/477 tracks a way in that the limit cannot block.

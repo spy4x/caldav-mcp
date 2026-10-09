@@ -142,9 +142,10 @@ connector works in the Claude apps on every device signed in to your account. A 
 redeploy keeps it signed in. Each sign-in lasts 90 days from your approval; after that, Claude
 asks you to sign in again.
 
-One address can no longer keep you from approving a connector, but several still can: someone who
-controls about 10 addresses can send 100 wrong passwords in a day and so block every approval for
-up to 24 hours, and keep it blocked for as long as they keep sending. A restart does not lift it.
+Anyone who can reach the server can still keep you from approving a connector. 100 wrong passwords
+in a day from all addresses together block every approval for up to 24 hours, and one address can
+send them slowly enough to stay under its own limit. The block lasts as long as they keep sending,
+and a restart does not lift it.
 Connectors already signed in keep working. To approve anyway, block those addresses, stop the
 server and delete the server-wide count from the OAuth store, then start it again:
 
