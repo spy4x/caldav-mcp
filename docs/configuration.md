@@ -9,7 +9,8 @@ All settings are environment variables, read once at startup.
 | `CALDAV_PASSWORD` | — | CalDAV auth password |
 | `HOST` | `127.0.0.1` | Interface the HTTP mode binds to. Set `0.0.0.0` inside a container |
 | `PORT` | `3000` | HTTP port (for `--http` mode) |
-| `MCP_BEARER_TOKEN` | — | Token for HTTP mode. Required there: without it `--http` refuses to start. Setting it also turns HTTP mode on |
+| `MCP_BEARER_TOKEN` | — | Static token for HTTP mode. Without it or OAuth `--http` refuses to start. Setting it also turns HTTP mode on. Refused while OAuth is on, unless the next variable allows it |
+| `ALLOW_BEARER_TOKEN_WITH_OAUTH` | `false` | `true` accepts `MCP_BEARER_TOKEN` next to OAuth. No effect without OAuth. Any value other than `true` or `false` stops startup |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `PUBLIC_URL` | — | OAuth: the server's public origin, like `https://caldav-mcp.example.com`. The MCP endpoint is this plus `/mcp`. Set with the next two, or none of the three |
 | `OWNER_PASSWORD_HASH` | — | OAuth: the hash of the password you type to approve a connector. Never the password itself; [how to make it](../README.md#use-it-from-claudeai) |
@@ -26,7 +27,8 @@ without it. A `MCP-Protocol-Version` header the server does not speak gets `400`
 `405`: the server never starts a stream of its own.
 
 `/health` needs no token. Every other route needs `MCP_BEARER_TOKEN` or, with OAuth on, an access
-token from the OAuth flow. The static token is sent as one of:
+token from the OAuth flow (and the static token only with `ALLOW_BEARER_TOKEN_WITH_OAUTH=true`).
+The static token is sent as one of:
 
 - `Authorization: Bearer <token>`
 - `Authorization: <token>`
@@ -61,6 +63,8 @@ With OAuth on:
 - After 10 wrong owner passwords in 15 minutes, counted for the whole server, every approval gets
   `429` until the window ends. Someone who can reach the page can therefore keep you from approving
   a new connector for a while; connectors already signed in keep working.
-- `MCP_BEARER_TOKEN` keeps working next to OAuth, so clients such as OpenWebUI need no change.
+- `MCP_BEARER_TOKEN` is refused: a request carrying it gets the same `401` and `WWW-Authenticate`
+  as any wrong token, so nobody can tell whether one is set. Set
+  `ALLOW_BEARER_TOKEN_WITH_OAUTH=true` to accept it next to OAuth, for clients such as OpenWebUI.
 - Grants and tokens live in Deno KV at `OAUTH_KV_PATH`, so a restart keeps connectors signed in.
   The server runs with `--unstable-kv` for this (the tasks and the Docker image set it).

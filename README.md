@@ -118,8 +118,10 @@ unset AUTH_PEPPER
 | `HOST`                | `0.0.0.0` in a container                                    |
 
 Set all three OAuth variables or none: with one or two the server refuses to start and names the
-missing ones. `MCP_BEARER_TOKEN` is optional with OAuth on, and keeps working for clients that use
-it, such as OpenWebUI.
+missing ones. With OAuth on, `/mcp` refuses `MCP_BEARER_TOKEN` and answers it like any wrong token,
+so a public server cannot be entered with a leaked static token; leave it unset there. A server that
+also serves clients with the static token, such as OpenWebUI, must say so with
+`ALLOW_BEARER_TOKEN_WITH_OAUTH=true`.
 
 The server keeps grants and tokens in a Deno KV file, `/data/oauth.kv` by default, so mount a
 writable volume at `/data` (`compose.yml` does). Its directory must exist: if the file cannot be
