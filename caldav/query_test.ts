@@ -337,3 +337,18 @@ Deno.test('a calendar that fails to list is reported, not shown as empty', async
   const result = await engine.queryTodos({});
   assertEquals(result.error?.code, 'Server');
 });
+
+Deno.test('a calendar that fails while another answers is listed under failedCalendars', async () => {
+  const { engine, fake } = setup();
+  fake.calendars.set(`${HOME}work/`, { displayName: 'Work', components: ['VTODO'] });
+  const original = fake.fetch;
+  fake.fetch = (input, init) => {
+    const request = new Request(input, init);
+    return request.method === 'REPORT' && new URL(request.url).pathname === TASKS
+      ? Promise.resolve(new Response(null, { status: 500 }))
+      : original(input, init);
+  };
+  const result = unwrap(await engine.queryTodos({}));
+  assertEquals(result.total, 0);
+  assertEquals(result.failedCalendars?.map((c) => c.url), [url(TASKS)]);
+});
