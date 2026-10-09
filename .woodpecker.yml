@@ -6,6 +6,20 @@ steps:
       - deno task test
       - deno publish --dry-run
 
+  # Guards against an accidental release: a `v*` tag publishes to JSR with the global token, so
+  # this step fails the build unless the tagged commit is already on `main` (reviewed, green CI).
+  # It is not access control: Woodpecker runs the tagged commit's own `.woodpecker.yml`, so a tag
+  # on a branch that predates this step, or one that removes it, still publishes. A tag build's
+  # clone is full but has no `main` ref, which is why the step fetches it.
+  on-main:
+    image: alpine/git:2.47.2
+    when:
+      event: tag
+      ref: refs/tags/v*
+    commands:
+      - git fetch --no-tags --depth=2147483647 origin main
+      - git merge-base --is-ancestor "$${CI_COMMIT_SHA}" FETCH_HEAD || { echo "Refusing to publish, commit $${CI_COMMIT_SHA} is not on main"; exit 1; }
+
   # Publishes to JSR (`jsr:@spy4x/caldav-mcp`) on a `v*` tag, after `check` passed. The tag must
   # match `version` in deno.jsonc. `$$` stops Woodpecker substituting the variable itself.
   publish:
