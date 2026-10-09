@@ -17,7 +17,7 @@ import { assertEquals, assertNotEquals, assertThrows } from 'std/assert/mod.ts';
 
 const TOKEN = 'test-token-123';
 
-function setup(options: { trustedProxies?: string[] } = {}) {
+function setup(options: { trustedProxies?: string[]; allowedOrigins?: string[] } = {}) {
   const logs: string[] = [];
   const handler = createHttpHandler(
     new McpHandler({ name: 'test', version: '0.0.0' }),
@@ -73,6 +73,46 @@ Deno.test('the HTTP transport passes ALLOW_BEARER_TOKEN_WITH_OAUTH to the handle
   assertEquals(allowed(undefined), false);
   assertEquals(allowed('false'), false);
   assertEquals(allowed('true'), true);
+});
+
+Deno.test('the HTTP transport allows browser calls only from PUBLIC_URL, and none without it', () => {
+  const origins = (vars: Record<string, string>) => {
+    const env = loadEnv(createEnvReader({
+      CALDAV_URL: 'https://cal.example.com',
+      CALDAV_USERNAME: 'user',
+      CALDAV_PASSWORD: 'pass',
+      ...vars,
+    }));
+    return httpHandlerOptions(env, undefined).allowedOrigins;
+  };
+  assertEquals(origins({}), []);
+  assertEquals(
+    origins({
+      PUBLIC_URL: 'https://mcp.example.com/',
+      OWNER_PASSWORD_HASH: `pbkdf2-sha256$600000$${'0'.repeat(32)}$${'0'.repeat(64)}`,
+      AUTH_PEPPER: 'p'.repeat(32),
+    }),
+    ['https://mcp.example.com'],
+  );
+});
+
+Deno.test('a browser request to /mcp from an origin it does not allow gets 403, even with the right token', async () => {
+  const { handler } = setup({ allowedOrigins: ['https://mcp.example.com'] });
+  for (const origin of ['https://evil.example', 'null', 'https://mcp.example.com.evil.example']) {
+    const res = await handler(post(PING, { 'Authorization': `Bearer ${TOKEN}`, 'Origin': origin }));
+    assertEquals(res.status, 403, origin);
+    await res.body?.cancel();
+  }
+});
+
+Deno.test('a request to /mcp without an Origin header, or from an allowed one, is served', async () => {
+  const { handler } = setup({ allowedOrigins: ['https://mcp.example.com'] });
+  const variants: Record<string, string>[] = [{}, { 'Origin': 'https://mcp.example.com' }];
+  for (const extra of variants) {
+    const res = await handler(post(PING, { 'Authorization': `Bearer ${TOKEN}`, ...extra }));
+    assertEquals(res.status, 200, JSON.stringify(extra));
+    await res.body?.cancel();
+  }
 });
 
 Deno.test('HTTP mode listens on the configured host and port', () => {

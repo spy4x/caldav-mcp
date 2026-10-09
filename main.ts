@@ -6,6 +6,7 @@ import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
 import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
 import { MCP_PATH, type OAuth, openOAuth } from './oauth.ts';
+import { runGrantsCommand } from './grants.ts';
 import { AUTHORIZE_PATH } from '@spy4x/server/mcp-oauth';
 import { registerAllTools } from './tools/index.ts';
 import {
@@ -24,6 +25,9 @@ import {
 export const VERSION = '1.2.0';
 
 async function main(): Promise<void> {
+  // `caldav-mcp grants …` manages OAuth grants and exits; it needs no CalDAV settings.
+  if (Deno.args[0] === 'grants') Deno.exit(await runGrantsCommand(Deno.args.slice(1)));
+
   const env = loadEnv();
   const log = createLogger(env, (line) => console.error(line));
 
@@ -169,17 +173,24 @@ export interface HttpHandlerOptions {
   oauth?: OAuth;
   /** Accept the static token while `oauth` is set. Without it the static token is refused. */
   allowBearerTokenWithOAuth?: boolean;
+  /**
+   * Origins a browser may call `/mcp` from. A request with any other `Origin` header gets `403`;
+   * a request without one, like Claude's, is not affected.
+   */
+  allowedOrigins?: readonly string[];
 }
 
 /** The handler options the HTTP transport runs with, taken from the environment. */
 export function httpHandlerOptions(
-  env: Pick<Env, 'trustedProxies' | 'allowBearerTokenWithOAuth'>,
+  env: Pick<Env, 'trustedProxies' | 'allowBearerTokenWithOAuth' | 'oauth'>,
   oauth: OAuth | undefined,
 ): HttpHandlerOptions {
   return {
     trustedProxies: env.trustedProxies,
     oauth,
     allowBearerTokenWithOAuth: env.allowBearerTokenWithOAuth,
+    // The server's own pages are the only browser origin it trusts; without PUBLIC_URL, none.
+    allowedOrigins: env.oauth ? [env.oauth.publicUrl] : [],
   };
 }
 
@@ -203,6 +214,10 @@ interface PeerInfo {
  * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
  * minute, checked before the token comparison, `CONSENT_PAGE_LIMIT` consent pages a minute, and
  * `RATE_LIMIT` requests a minute.
+ *
+ * A request to `/mcp` with an `Origin` header outside `allowedOrigins` gets `403` before anything
+ * else, so a web page the owner visits cannot use the server through their browser (DNS
+ * rebinding, a local server). Clients that send no `Origin`, like Claude's, are not affected.
  */
 export function createHttpHandler(
   mcp: McpHandler,
@@ -219,12 +234,19 @@ export function createHttpHandler(
   const authFailures = createMemoryRateLimiter({ ...window, limit: AUTH_FAILURE_LIMIT });
   const consentPages = createMemoryRateLimiter({ ...window, limit: CONSENT_PAGE_LIMIT });
   const ipOptions = { trustedProxies: options.trustedProxies ?? [] };
+  const allowedOrigins = new Set(options.allowedOrigins ?? []);
 
   return async (req: Request, info?: PeerInfo): Promise<Response> => {
     const url = new URL(req.url);
 
     if (url.pathname === '/health') {
       return json({ status: 'ok', version: VERSION });
+    }
+
+    const origin = req.headers.get('origin');
+    if (url.pathname === MCP_PATH && origin !== null && !allowedOrigins.has(origin)) {
+      log('debug', `Refused ${req.method} ${url.pathname} from a browser origin it does not allow`);
+      return json({ error: 'Forbidden origin' }, 403);
     }
 
     const addr = info?.remoteAddr;
@@ -235,12 +257,12 @@ export function createHttpHandler(
       const decision = limiter.check(client);
       if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
       // Opening a consent page may fetch a client document and stores a pending consent. Wrong
-      // owner passwords on its submission are capped by the library, for the whole server.
+      // owner passwords on its submission are capped by the library, per client and in total.
       if (url.pathname === AUTHORIZE_PATH && req.method === 'GET') {
         const page = consentPages.check(client);
         if (!page.allowed) return tooManyRequests(page.retryAfterMs);
       }
-      return await oauth.fetch(req);
+      return await oauth.fetch(req, client);
     }
 
     // Reserve, verify and refund with no await between them for the static token, so parallel

@@ -95,11 +95,12 @@ terminates TLS in front of the container. Set `TRUSTED_PROXIES` to the proxy's n
 limit sees each client's own address.
 
 **2. Make the owner password hash.** Use a long random owner password, for example 24 or more
-characters from a password manager. After 10 wrong passwords in 15 minutes the server stops
-accepting approvals until the 15 minutes are over, so guessing is slow, but a long password is what
-keeps it safe. Pick a pepper, a random secret of at least 32 characters, for example
-`openssl rand -base64 48`. Then hash your password with it, from a checkout of this repository. Both
-the pepper and the password are read without echoing, so neither lands in your shell history:
+characters from a password manager. After 10 wrong passwords in 15 minutes from one address, or 100
+in a day from all addresses together, the server stops accepting approvals for a while, so guessing
+is slow, but a long password is what keeps it safe. Pick a pepper, a random secret of at least 32
+characters, for example `openssl rand -base64 48`. Then hash your password with it, from a checkout
+of this repository. Both the pepper and the password are read without echoing, so neither lands in
+your shell history:
 
 ```bash
 read -rs AUTH_PEPPER && export AUTH_PEPPER   # paste the pepper; it is not echoed
@@ -133,10 +134,50 @@ secret empty.
 
 **5. Sign in.** Claude opens a consent page on your server. It shows who is asking and where the
 approval goes (`claude.ai`). Type your owner password and press **Allow**. A wrong password shows
-the page again with "Wrong password. Try again." After 10 wrong passwords in 15 minutes, from anyone,
-approvals get `429` until the 15 minutes are over; connectors already signed in keep working. Claude
-then lists the tools, and the connector works in the Claude apps on every device signed in to your
-account. A restart or a redeploy keeps it signed in.
+the page again with "Wrong password. Try again." After 10 wrong passwords in 15 minutes from one
+address, approvals from that address get `429` until the 15 minutes are over, while your own
+address can still approve; after 100 in a day from all addresses together, every approval gets
+`429` for a while. Connectors already signed in keep working. Claude then lists the tools, and the
+connector works in the Claude apps on every device signed in to your account. A restart or a
+redeploy keeps it signed in. Each sign-in lasts 90 days from your approval; after that, Claude
+asks you to sign in again.
+
+One address can no longer keep you from approving a connector, but several still can: someone who
+controls about 10 addresses can send 100 wrong passwords in a day and so block every approval for
+up to 24 hours, and keep it blocked for as long as they keep sending. A restart does not lift it.
+Connectors already signed in keep working. To approve anyway, block those addresses, stop the
+server and delete the server-wide count from the OAuth store, then start it again:
+
+```bash
+deno eval --unstable-kv '
+  const kv = await Deno.openKv("oauth.kv")
+  await kv.delete(["mcp-oauth", "attempts", "total"])
+  kv.close()'
+```
+
+Run it with `oauth.kv` replaced by the path to that file where you run it. The container image has
+no `deno`, so run it on the host against the file in the data volume, as a user who can write it.
+A way in that this limit cannot block is
+planned in https://github.com/spy4x/ts-libs/issues/477.
+
+### Sign a connector out
+
+If a device with Claude signed in is lost, or you no longer trust a connector, revoke its grant.
+Run the command where the server runs, for example in its container:
+
+```bash
+docker exec <container> caldav-mcp grants list           # one line per signed-in connector
+docker exec <container> caldav-mcp grants revoke <grantId>
+```
+
+`list` prints each grant's id, the client's host, when you approved it and when it ends. `revoke`
+signs that one connector out at once and keeps every other one signed in; it works while the
+server runs. From a checkout, `deno task grants list` does the same, reading `OAUTH_KV_PATH`.
+
+A connector approved before version 1.3.0 has no grant record until it next refreshes its token,
+which it does the first time it is used after its 15-minute access token runs out. If you need to
+sign it out before then, sign out everything: stop the server, delete the `oauth.kv` file (and its
+`-shm` and `-wal` files), and start it again. Every connector then asks you to sign in again.
 
 ## Development
 

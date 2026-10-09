@@ -44,6 +44,10 @@ from it gets `429` with `Retry-After` until the minute is over, before its token
 Each client may also send 100 authorized requests per minute. A request body over 1 MiB gets `413`,
 and a batch of more than 20 messages is refused whole.
 
+A request to `/mcp` with an `Origin` header gets `403` unless the origin is `PUBLIC_URL`, so a web
+page you visit cannot reach the server through your browser. Without `PUBLIC_URL` every `Origin` is
+refused. Clients that are not browsers, Claude's among them, send no `Origin` and are not affected.
+
 ## OAuth
 
 Set `PUBLIC_URL`, `OWNER_PASSWORD_HASH` and `AUTH_PEPPER` together and the server becomes its own
@@ -60,9 +64,18 @@ With OAuth on:
 - Only clients whose `client_id` is on `claude.ai` can sign in: the Claude apps and Claude Code.
   A `client_id` on any other host gets `400` before anything is fetched.
 - Each client may open 10 consent pages a minute; the next one gets `429` until the minute is over.
-- After 10 wrong owner passwords in 15 minutes, counted for the whole server, every approval gets
-  `429` until the window ends. Someone who can reach the page can therefore keep you from approving
-  a new connector for a while; connectors already signed in keep working.
+- After 10 wrong owner passwords in 15 minutes from one client address, approvals from that address
+  get `429` until the window ends; the right password from another address still works. After 100
+  wrong passwords in 24 hours from all addresses together, every approval gets `429` until the
+  oldest of them is a day old. The counts live in `OAUTH_KV_PATH`, so a restart does not reset them.
+  Connectors already signed in keep working. So someone who controls about 10 addresses can still
+  block every approval for up to 24 hours, and longer if they keep sending; the README section [Use
+  it from claude.ai](../README.md#use-it-from-claudeai) gives the recovery step (delete the key
+  `["mcp-oauth", "attempts", "total"]` with the server stopped), and
+  https://github.com/spy4x/ts-libs/issues/477 tracks a way in that the limit cannot block.
+- Each grant ends 90 days after the owner approved it; refreshing its tokens does not extend it.
+  `caldav-mcp grants list` shows the grants and `caldav-mcp grants revoke <grantId>` signs one
+  out; see [Sign a connector out](../README.md#sign-a-connector-out).
 - `MCP_BEARER_TOKEN` is refused: a request carrying it gets the same `401` and `WWW-Authenticate`
   as any wrong token, so nobody can tell whether one is set. Set
   `ALLOW_BEARER_TOKEN_WITH_OAUTH=true` to accept it next to OAuth, for clients such as OpenWebUI.

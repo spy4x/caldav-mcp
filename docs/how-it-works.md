@@ -50,6 +50,7 @@ caldav-mcp/
 ├── main.ts           # Entry: stdio + Streamable HTTP transports
 ├── mcp.ts            # MCP protocol (JSON-RPC 2.0, versions 2024-11-05 to 2025-06-18)
 ├── oauth.ts          # OAuth for remote connectors, on @spy4x/server/mcp-oauth
+├── grants.ts         # `caldav-mcp grants`: list and revoke OAuth grants
 ├── env.ts            # Config from environment variables
 ├── caldav/
 │   ├── query.ts      # Query engine on @spy4x/caldav + @spy4x/time/ical-tasks
