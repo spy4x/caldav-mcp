@@ -4,7 +4,7 @@
 import { type Env, loadEnv } from './env.ts';
 import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
-import { McpHandler } from './mcp.ts';
+import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
 import { registerAllTools } from './tools/index.ts';
 import {
   bearerTokenFromHeaders,
@@ -214,7 +214,21 @@ function isAuthorized(req: Request, verifier: ReturnType<typeof createTokenVerif
   return candidates.some((candidate) => !!candidate && verifier.verifySync(candidate));
 }
 
+/** Header a Streamable HTTP client sends after initialization with the negotiated version. */
+const PROTOCOL_VERSION_HEADER = 'MCP-Protocol-Version';
+/** Header that carries the session id the server assigns at initialization. */
+export const SESSION_ID_HEADER = 'Mcp-Session-Id';
+
+/**
+ * Answer one Streamable HTTP POST: a JSON-RPC message or batch in, a JSON response out, or `202`
+ * when it held no request. An `initialize` answer carries a new `Mcp-Session-Id`. The server keeps
+ * no per-session state, so later requests are served with or without that header.
+ */
 async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
+  const version = req.headers.get(PROTOCOL_VERSION_HEADER);
+  if (version !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(version)) {
+    return json({ error: `Unsupported ${PROTOCOL_VERSION_HEADER}` }, 400);
+  }
   let body: string;
   try {
     body = await readBoundedText(req, { maxBytes: MAX_BODY_BYTES });
@@ -224,9 +238,15 @@ async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
     throw err;
   }
   const response = await mcp.handleMessage(body);
-  // A notification has no response: acknowledge it without a body.
+  // Notifications and client responses get no answer: acknowledge them without a body.
   if (!response) return new Response(null, { status: 202 });
-  return json(response);
+  const initialized = [response].flat().some(isInitializeResult);
+  return json(response, 200, initialized ? { [SESSION_ID_HEADER]: crypto.randomUUID() } : {});
+}
+
+function isInitializeResult(response: JsonRpcResponse): boolean {
+  const result = response.result;
+  return typeof result === 'object' && result !== null && 'protocolVersion' in result;
 }
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
