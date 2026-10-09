@@ -56,8 +56,11 @@ export interface OAuth {
   resource: string;
   /** True for a path this module serves: the two metadata documents, `/authorize`, `/token`. */
   handles(pathname: string): boolean;
-  /** Serve a request for a path {@link OAuth.handles}. */
-  fetch(req: Request): Promise<Response>;
+  /**
+   * Serve a request for a path {@link OAuth.handles}. `clientAddress` is the client's address as
+   * the rate limiter sees it; wrong owner passwords are counted per address.
+   */
+  fetch(req: Request, clientAddress?: string): Promise<Response>;
   /**
    * Check the access token of an MCP request. `undefined` means it is valid for this server;
    * otherwise the `401` response to send, with `WWW-Authenticate` pointing at the metadata.
@@ -99,13 +102,21 @@ export async function openOAuth(
   }
 }
 
+/** What {@link OAuth.fetch} hands the Hono app as `c.env`. */
+interface RequestBindings {
+  clientAddress?: string;
+}
+
 /**
  * Build the authorization server and the resource-server guard for one owner.
  *
  * The owner proves who they are with a password on the consent page (the library's
  * `ownerPassword`), since this server has no forward-auth in front of it. Approving needs the
- * password; denying does not. After 10 wrong passwords in 15 minutes the library refuses every
- * approval with `429` until the window ends.
+ * password; denying does not. After 10 wrong passwords in 15 minutes from one client address the
+ * library refuses approvals from that address with `429` until the window ends; after 100 in 24
+ * hours from all addresses together it refuses every approval. The counts live in the store, so a
+ * restart keeps them. Each grant ends 90 days after the owner approved it, however often its
+ * client refreshes.
  *
  * @throws {TypeError} When the URL, the pepper or anything the library checks is invalid.
  */
@@ -123,7 +134,12 @@ function createOAuth(config: OAuthConfig, store: OAuthStore, options: OAuthOptio
       fetcher: options.fetcher,
       resolver: options.resolver,
     }),
-    ownerPassword: { hash: config.ownerPasswordHash, hasher },
+    ownerPassword: {
+      hash: config.ownerPasswordHash,
+      hasher,
+      // The address `fetch` was given: the one the HTTP handler rate limits by.
+      clientAddress: (c) => (c.env as RequestBindings | undefined)?.clientAddress,
+    },
   });
   const resourceServer = createResourceServer({
     resource,
@@ -150,7 +166,10 @@ function createOAuth(config: OAuthConfig, store: OAuthStore, options: OAuthOptio
   return {
     resource: resourceServer.resource,
     handles: (pathname) => paths.has(pathname),
-    fetch: async (req) => await app.fetch(req),
+    fetch: async (req, clientAddress) => {
+      const bindings: RequestBindings = { clientAddress };
+      return await app.fetch(req, bindings);
+    },
     async authenticate(req) {
       const res = await guard.fetch(req);
       return res.status === 204 ? undefined : res;

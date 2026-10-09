@@ -253,12 +253,12 @@ export function createHttpHandler(
       const decision = limiter.check(client);
       if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
       // Opening a consent page may fetch a client document and stores a pending consent. Wrong
-      // owner passwords on its submission are capped by the library, for the whole server.
+      // owner passwords on its submission are capped by the library, per client and in total.
       if (url.pathname === AUTHORIZE_PATH && req.method === 'GET') {
         const page = consentPages.check(client);
         if (!page.allowed) return tooManyRequests(page.retryAfterMs);
       }
-      return await oauth.fetch(req);
+      return await oauth.fetch(req, client);
     }
 
     // Reserve, verify and refund with no await between them for the static token, so parallel

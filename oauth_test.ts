@@ -277,28 +277,79 @@ Deno.test('denying consent needs no password and sends the client access_denied'
   assertEquals(location.searchParams.has('code'), false);
 });
 
-Deno.test('after 10 wrong owner passwords from any addresses, approvals get 429 even with the right one', async () => {
-  using ctx = await setup();
-  const { handler } = ctx;
-  const { challenge } = await pkce();
-  const { consentId } = await openConsent(handler, challenge);
-  const wrong = { consent_id: consentId, decision: 'approve', [OWNER_PASSWORD_FIELD]: 'nope' };
-  // Each guess from its own address, so no per-address limit is what stops them.
-  const from = (i: number) => ({
-    remoteAddr: { transport: 'tcp' as const, hostname: `203.0.113.${i + 1}`, port: 40000 },
-  });
-  for (let i = 0; i < 10; i++) {
-    const res = await handler(form('/authorize', wrong), from(i));
-    await res.body?.cancel();
-    assertEquals(res.status, 403);
-  }
-  const blocked = await handler(
-    form('/authorize', { ...wrong, [OWNER_PASSWORD_FIELD]: OWNER_PASSWORD }),
-    from(10),
+/** The connection info of a client at 203.0.113.`n` (no trusted proxies in these tests). */
+function from(n: number) {
+  return { remoteAddr: { transport: 'tcp' as const, hostname: `203.0.113.${n}`, port: 40000 } };
+}
+
+/** Post the owner's decision on `consentId` from 203.0.113.`n`; returns the status. */
+async function approve(handler: Handler, consentId: string, password: string, n: number) {
+  const res = await handler(
+    form('/authorize', {
+      consent_id: consentId,
+      decision: 'approve',
+      [OWNER_PASSWORD_FIELD]: password,
+    }),
+    from(n),
   );
-  await blocked.body?.cancel();
+  await res.body?.cancel();
+  return res;
+}
+
+Deno.test('after 10 wrong owner passwords from one address, its approvals get 429 even with the right one', async () => {
+  using ctx = await setup();
+  const { challenge } = await pkce();
+  const { consentId } = await openConsent(ctx.handler, challenge);
+  for (let i = 0; i < 10; i++) {
+    assertEquals((await approve(ctx.handler, consentId, 'nope', 1)).status, 403);
+  }
+  const blocked = await approve(ctx.handler, consentId, OWNER_PASSWORD, 1);
   assertEquals(blocked.status, 429);
   assert(blocked.headers.has('Retry-After'));
+});
+
+Deno.test('the right owner password from another address still approves while one address is locked out', async () => {
+  using ctx = await setup();
+  const { challenge } = await pkce();
+  const { consentId } = await openConsent(ctx.handler, challenge);
+  for (let i = 0; i < 10; i++) await approve(ctx.handler, consentId, 'nope', 1);
+  assertEquals((await approve(ctx.handler, consentId, OWNER_PASSWORD, 1)).status, 429);
+  assertEquals((await approve(ctx.handler, consentId, OWNER_PASSWORD, 2)).status, 302);
+});
+
+Deno.test('after 100 wrong owner passwords spread over many addresses, every approval gets 429', async () => {
+  using ctx = await setup();
+  const { challenge } = await pkce();
+  const { consentId } = await openConsent(ctx.handler, challenge);
+  // Nine guesses from each address: no address reaches its own limit of 10.
+  for (let i = 0; i < 100; i++) {
+    assertEquals(
+      (await approve(ctx.handler, consentId, 'nope', 1 + Math.floor(i / 9))).status,
+      403,
+    );
+  }
+  const blocked = await approve(ctx.handler, consentId, OWNER_PASSWORD, 200);
+  assertEquals(blocked.status, 429);
+  assert(blocked.headers.has('Retry-After'));
+});
+
+Deno.test('a restart keeps an address locked out after 10 wrong owner passwords', async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const kvPath = `${dir}/oauth.kv`;
+    const { challenge } = await pkce();
+    let consentId: string;
+    {
+      using before = await setup(kvPath);
+      consentId = (await openConsent(before.handler, challenge)).consentId;
+      for (let i = 0; i < 10; i++) await approve(before.handler, consentId, 'nope', 1);
+    }
+    using after = await setup(kvPath);
+    assertEquals((await approve(after.handler, consentId, OWNER_PASSWORD, 1)).status, 429);
+    assertEquals((await approve(after.handler, consentId, OWNER_PASSWORD, 2)).status, 302);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 /** The static token in each header it may arrive in. */

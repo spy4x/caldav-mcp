@@ -95,9 +95,9 @@ terminates TLS in front of the container. Set `TRUSTED_PROXIES` to the proxy's n
 limit sees each client's own address.
 
 **2. Make the owner password hash.** Use a long random owner password, for example 24 or more
-characters from a password manager. After 10 wrong passwords in 15 minutes the server stops
-accepting approvals until the 15 minutes are over, so guessing is slow, but a long password is what
-keeps it safe. Pick a pepper, a random secret of at least 32 characters, for example
+characters from a password manager. After 10 wrong passwords in 15 minutes from one address, or
+100 in a day from all addresses together, the server stops accepting approvals for a while, so
+guessing is slow, but a long password is what keeps it safe. Pick a pepper, a random secret of at least 32 characters, for example
 `openssl rand -base64 48`. Then hash your password with it, from a checkout of this repository. Both
 the pepper and the password are read without echoing, so neither lands in your shell history:
 
