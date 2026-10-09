@@ -27,7 +27,8 @@ without it. A `MCP-Protocol-Version` header the server does not speak gets `400`
 `405`: the server never starts a stream of its own.
 
 `/health` needs no token. Every other route needs `MCP_BEARER_TOKEN` or, with OAuth on, an access
-token from the OAuth flow (and the static token only with `ALLOW_BEARER_TOKEN_WITH_OAUTH=true`). The static token is sent as one of:
+token from the OAuth flow (and the static token only with `ALLOW_BEARER_TOKEN_WITH_OAUTH=true`).
+The static token is sent as one of:
 
 - `Authorization: Bearer <token>`
 - `Authorization: <token>`
