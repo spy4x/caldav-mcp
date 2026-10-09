@@ -1,6 +1,6 @@
 // ── MCP protocol handler tests ──
 
-import { McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
+import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
 import { assertEquals } from 'std/assert/mod.ts';
 
 function handlerWithTools(): McpHandler {
@@ -21,8 +21,13 @@ function handlerWithTools(): McpHandler {
   return mcp;
 }
 
+/** Send one message that is not a batch, so the answer is one response or none. */
 function send(mcp: McpHandler, msg: unknown) {
-  return mcp.handleMessage(JSON.stringify(msg));
+  return mcp.handleMessage(JSON.stringify(msg)) as Promise<JsonRpcResponse | null>;
+}
+
+function sendBatch(mcp: McpHandler, batch: unknown[]) {
+  return mcp.handleMessage(JSON.stringify(batch));
 }
 
 Deno.test('initialize echoes each protocol version it supports', async () => {
@@ -93,7 +98,39 @@ Deno.test('a successful tool result carries no isError flag', async () => {
   assertEquals(res?.result, { content: [{ type: 'text', text: '{"value":1}' }] });
 });
 
-Deno.test('a batch array is rejected as an invalid request', async () => {
-  const res = await send(handlerWithTools(), [{ jsonrpc: '2.0', id: 1, method: 'ping' }]);
-  assertEquals(res?.error?.code, -32600);
+Deno.test('a batch gets one response per request in it, in order, and none for notifications', async () => {
+  const res = await sendBatch(handlerWithTools(), [
+    { jsonrpc: '2.0', id: 1, method: 'ping' },
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: 'b', method: 'no/such' },
+  ]);
+  assertEquals(res, [
+    { jsonrpc: '2.0', id: 1, result: {} },
+    { jsonrpc: '2.0', id: 'b', error: { code: -32601, message: 'Method not found: no/such' } },
+  ]);
+});
+
+Deno.test('a batch of notifications only gets no response', async () => {
+  const res = await sendBatch(handlerWithTools(), [
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', method: 'notifications/cancelled' },
+  ]);
+  assertEquals(res, null);
+});
+
+Deno.test('an empty batch is an invalid request', async () => {
+  const res = await sendBatch(handlerWithTools(), []);
+  assertEquals(res, {
+    jsonrpc: '2.0',
+    id: null,
+    error: { code: -32600, message: 'Invalid Request' },
+  });
+});
+
+Deno.test('a client response to a server request gets no response', async () => {
+  assertEquals(await send(handlerWithTools(), { jsonrpc: '2.0', id: 7, result: {} }), null);
+  assertEquals(
+    await send(handlerWithTools(), { jsonrpc: '2.0', id: 8, error: { code: 1, message: 'no' } }),
+    null,
+  );
 });
