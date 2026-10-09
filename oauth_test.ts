@@ -77,7 +77,7 @@ async function setup(
     resolver: network.resolver,
   });
   const mcp = new McpHandler({ name: 'test', version: '0.0.0' });
-  registerAllTools(mcp, caldavSetup().engine);
+  registerAllTools(mcp, caldavSetup().engine, 'all');
   const logs: string[] = [];
   const handler = createHttpHandler(mcp, STATIC_TOKEN, (_level, msg) => logs.push(msg), {
     oauth,

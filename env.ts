@@ -3,6 +3,7 @@
 import { type EnvReader, readEnvVar, systemEnv } from '@spy4x/server/config/env';
 import { ipInRanges } from '@spy4x/net/ip';
 import { DEFAULT_OAUTH_KV_PATH, type OAuthConfig } from './oauth.ts';
+import { TOOL_MODES, type ToolMode } from './tools/index.ts';
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
@@ -27,6 +28,8 @@ export interface Env {
    * could forge that header.
    */
   trustedProxies: string[];
+  /** Which tools the server offers, from `CALDAV_MCP_TOOLS`; `all` unless set. */
+  tools: ToolMode;
   /** Set when `PUBLIC_URL`, `OWNER_PASSWORD_HASH` and `AUTH_PEPPER` are all set; see `oauth.ts`. */
   oauth?: OAuthConfig;
 }
@@ -45,8 +48,8 @@ const MIN_PEPPER_LENGTH = 32;
 
 /**
  * Read the configuration once at startup. Blank values count as unset. Throws on a missing
- * required value or on a `PORT`, `LOG_LEVEL`, `TRUSTED_PROXIES` or `ALLOW_BEARER_TOKEN_WITH_OAUTH`
- * it cannot use, naming the variable but never echoing its value.
+ * required value or on a `PORT`, `LOG_LEVEL`, `TRUSTED_PROXIES`, `ALLOW_BEARER_TOKEN_WITH_OAUTH` or
+ * `CALDAV_MCP_TOOLS` it cannot use, naming the variable but never echoing its value.
  */
 export function loadEnv(env: EnvReader = systemEnv): Env {
   // Support both CALDAV_URL and CALDAV_SERVER_URL (homelab convention)
@@ -70,6 +73,7 @@ export function loadEnv(env: EnvReader = systemEnv): Env {
     ),
     logLevel: parseLogLevel(optional('LOG_LEVEL') || 'info'),
     trustedProxies: parseCidrList('TRUSTED_PROXIES', optional('TRUSTED_PROXIES')),
+    tools: parseToolMode(optional('CALDAV_MCP_TOOLS') || 'all'),
     oauth: parseOAuth(optional),
   };
 }
@@ -148,6 +152,13 @@ function parseLogLevel(raw: string): Env['logLevel'] {
   const level = LOG_LEVELS.find((l) => l === raw);
   if (!level) throw new Error(`LOG_LEVEL must be one of: ${LOG_LEVELS.join(', ')}`);
   return level;
+}
+
+/** An unknown mode throws, so a typo never starts a server with the delete tools on. */
+function parseToolMode(raw: string): ToolMode {
+  const mode = TOOL_MODES.find((m) => m === raw);
+  if (!mode) throw new Error(`CALDAV_MCP_TOOLS must be one of: ${TOOL_MODES.join(', ')}`);
+  return mode;
 }
 
 function parseCidrList(name: string, raw: string): string[] {

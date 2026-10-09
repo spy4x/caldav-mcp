@@ -115,6 +115,24 @@ Deno.test('ALLOW_BEARER_TOKEN_WITH_OAUTH other than true or false stops startup'
   }
 });
 
+Deno.test('CALDAV_MCP_TOOLS defaults to all and accepts each mode', () => {
+  assertEquals(load({}).tools, 'all');
+  assertEquals(load({ CALDAV_MCP_TOOLS: '' }).tools, 'all');
+  for (const mode of ['all', 'no-delete', 'read-only']) {
+    assertEquals(load({ CALDAV_MCP_TOOLS: mode }).tools, mode);
+  }
+});
+
+Deno.test('an unknown CALDAV_MCP_TOOLS stops startup', () => {
+  for (const value of ['read', 'NO-DELETE', 'none', 'true']) {
+    assertThrows(
+      () => load({ CALDAV_MCP_TOOLS: value }),
+      Error,
+      'CALDAV_MCP_TOOLS must be one of: all, no-delete, read-only',
+    );
+  }
+});
+
 Deno.test('OAUTH_KV_PATH moves the OAuth store', () => {
   assertEquals(load({ ...OAUTH, OAUTH_KV_PATH: '/srv/oauth.kv' }).oauth?.kvPath, '/srv/oauth.kv');
 });

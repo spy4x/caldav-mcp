@@ -12,6 +12,7 @@ All settings are environment variables, read once at startup.
 | `MCP_BEARER_TOKEN` | — | Static token for HTTP mode. Without it or OAuth `--http` refuses to start. Setting it also turns HTTP mode on. Refused while OAuth is on, unless the next variable allows it |
 | `ALLOW_BEARER_TOKEN_WITH_OAUTH` | `false` | `true` accepts `MCP_BEARER_TOKEN` next to OAuth. No effect without OAuth. Any value other than `true` or `false` stops startup |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `CALDAV_MCP_TOOLS` | `all` | Which tools the server offers. `all`: every tool. `no-delete`: leaves out `delete_calendar`, `delete_event` and `delete_todo`. `read-only`: offers only `list_calendars`, `query_events`, `get_event`, `query_todos` and `get_todo`. A tool left out is missing from `tools/list` and refused when called. Applies to every client. Any other value stops startup |
 | `PUBLIC_URL` | — | OAuth: the server's public origin, like `https://caldav-mcp.example.com`. The MCP endpoint is this plus `/mcp`. Set with the next two, or none of the three |
 | `OWNER_PASSWORD_HASH` | — | OAuth: the hash of the password you type to approve a connector. Never the password itself; [how to make it](../README.md#use-it-from-claudeai) |
 | `AUTH_PEPPER` | — | OAuth: a random secret of at least 32 characters the hash is made with. Changing it invalidates the hash |

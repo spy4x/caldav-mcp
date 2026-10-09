@@ -80,7 +80,7 @@ The ones you must set:
 | `CALDAV_USERNAME` | `user`                    |
 | `CALDAV_PASSWORD` | `pass`                    |
 
-The HTTP port, the bearer token, OAuth and the log level are optional: see
+The HTTP port, the bearer token, OAuth, the log level and `CALDAV_MCP_TOOLS` are optional: see
 [configuration.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/configuration.md).
 Every variable is listed with a placeholder in [`.env.example`](.env.example).
 
@@ -117,12 +117,21 @@ unset AUTH_PEPPER
 | `AUTH_PEPPER`         | The pepper from step 2                                      |
 | `OAUTH_KV_PATH`       | Optional. Where tokens are kept; default `/data/oauth.kv`   |
 | `HOST`                | `0.0.0.0` in a container                                    |
+| `CALDAV_MCP_TOOLS`    | Optional. `no-delete` or `read-only`; default `all`         |
 
 Set all three OAuth variables or none: with one or two the server refuses to start and names the
 missing ones. With OAuth on, `/mcp` refuses `MCP_BEARER_TOKEN` and answers it like any wrong token,
 so a public server cannot be entered with a leaked static token; leave it unset there. A server that
 also serves clients with the static token, such as OpenWebUI, must say so with
 `ALLOW_BEARER_TOKEN_WITH_OAUTH=true`.
+
+Every connector that signs in gets every tool the server offers; the server has no per-connector
+scopes. A stolen token for a full server could delete every calendar and every task in the account.
+`CALDAV_MCP_TOOLS=no-delete` leaves `delete_calendar`, `delete_event` and `delete_todo` out of the
+tool list and refuses calls to them; `read-only` also leaves out every tool that creates or changes
+something. `no-delete` still allows `update_event` and `update_todo`, which can overwrite the
+content of any event or task; only `read-only` stops a stolen token from changing data. The setting
+applies to every client of that server. Any other value stops startup.
 
 The server keeps grants and tokens in a Deno KV file, `/data/oauth.kv` by default, so mount a
 writable volume at `/data` (`compose.yml` does). Its directory must exist: if the file cannot be
@@ -141,6 +150,11 @@ address can still approve; after 100 in a day from all addresses together, every
 connector works in the Claude apps on every device signed in to your account. A restart or a
 redeploy keeps it signed in. Each sign-in lasts 90 days from your approval; after that, Claude
 asks you to sign in again.
+
+Never approve a consent page you did not open yourself, even one on your own server: someone else
+can start a sign-in and send you its link. If you did approve one, run `caldav-mcp grants list` and
+revoke any grant you do not recognise with `caldav-mcp grants revoke <grantId>` (see
+[Sign a connector out](#sign-a-connector-out)).
 
 Anyone who can reach the server can still keep you from approving a connector. 100 wrong passwords
 in a day from all addresses together block every approval for up to 24 hours, and one address can

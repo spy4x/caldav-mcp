@@ -42,7 +42,8 @@ async function main(): Promise<void> {
   const engine = new QueryEngine(client);
 
   const mcp = new McpHandler({ name: 'caldav-mcp', version: VERSION });
-  registerAllTools(mcp, engine);
+  registerAllTools(mcp, engine, env.tools);
+  if (env.tools !== 'all') log('info', `Tools: ${env.tools}`);
 
   // Determine transport
   const args = Deno.args;

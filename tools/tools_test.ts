@@ -2,7 +2,7 @@
 
 import { assert, assertEquals } from 'std/assert/mod.ts';
 import { McpHandler } from '../mcp.ts';
-import { registerAllTools } from './index.ts';
+import { registerAllTools, type ToolMode } from './index.ts';
 import { ORIGIN } from '../caldav/testing/fake_caldav.ts';
 import {
   lineDiff,
@@ -17,10 +17,10 @@ import {
 
 const url = (path: string) => `${ORIGIN}${path}`;
 
-function server() {
+function server(mode: ToolMode = 'all') {
   const { fake, engine } = setup();
   const mcp = new McpHandler({ name: 'test', version: '0.0.0' });
-  registerAllTools(mcp, engine);
+  registerAllTools(mcp, engine, mode);
   const call = async (name: string, args: Record<string, unknown>) => {
     const response = await mcp.handleRequest({
       jsonrpc: '2.0',
@@ -267,4 +267,39 @@ Deno.test('the schemas of the four write tools describe alarms', async () => {
       tool.name.startsWith('update_'),
     );
   }
+});
+
+async function listedNames(mcp: McpHandler): Promise<string[]> {
+  const listed = await mcp.handleRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  return (listed!.result as { tools: { name: string }[] }).tools.map((t) => t.name).sort();
+}
+
+const DELETE_TOOLS = ['delete_calendar', 'delete_event', 'delete_todo'];
+const READ_TOOLS = ['get_event', 'get_todo', 'list_calendars', 'query_events', 'query_todos'];
+
+Deno.test('all lists the delete tools', async () => {
+  const names = await listedNames(server('all').mcp);
+  for (const name of DELETE_TOOLS) assert(names.includes(name), name);
+});
+
+Deno.test('no-delete leaves the three delete tools out of tools/list and keeps the rest', async () => {
+  const all = await listedNames(server('all').mcp);
+  const names = await listedNames(server('no-delete').mcp);
+  assertEquals(names, all.filter((name) => !DELETE_TOOLS.includes(name)));
+});
+
+Deno.test('no-delete refuses a delete_todo call and sends no DELETE', async () => {
+  const { mcp, fake } = server('no-delete');
+  const response = await mcp.handleRequest({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: { name: 'delete_todo', arguments: { url: url(TASKS_ORG_PATH), etag: TASKS_ORG_ETAG } },
+  });
+  assertEquals(response!.error?.message, 'Unknown tool: delete_todo');
+  assertEquals(fake.requests.filter((r) => r.method === 'DELETE'), []);
+});
+
+Deno.test('read-only lists only the five tools that change nothing', async () => {
+  assertEquals(await listedNames(server('read-only').mcp), READ_TOOLS);
 });

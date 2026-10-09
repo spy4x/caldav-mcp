@@ -1,7 +1,7 @@
 // ── Event tools: query_events, get_event, create_event, update_event, delete_event ──
 
 import { AlarmRelated, type EventPatch } from '@spy4x/time/ical-tasks';
-import type { McpHandler } from '../mcp.ts';
+import type { ToolRegistry } from './index.ts';
 import { DEFAULT_LIMIT, MAX_LIMIT, type QueryEngine } from '../caldav/query.ts';
 import {
   alarmsSchema,
@@ -54,7 +54,7 @@ function readPatch(args: Args): EventPatch {
   return patch;
 }
 
-export function registerEventTools(mcp: McpHandler, engine: QueryEngine): void {
+export function registerEventTools(mcp: ToolRegistry, engine: QueryEngine): void {
   mcp.registerTool(
     {
       name: 'query_events',
