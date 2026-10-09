@@ -129,7 +129,9 @@ Every connector that signs in gets every tool the server offers; the server has 
 scopes. A stolen token for a full server could delete every calendar and every task in the account.
 `CALDAV_MCP_TOOLS=no-delete` leaves `delete_calendar`, `delete_event` and `delete_todo` out of the
 tool list and refuses calls to them; `read-only` also leaves out every tool that creates or changes
-something. The setting applies to every client of that server. Any other value stops startup.
+something. `no-delete` still allows `update_event` and `update_todo`, which can overwrite the
+content of any event or task; only `read-only` stops a stolen token from changing data. The setting
+applies to every client of that server. Any other value stops startup.
 
 The server keeps grants and tokens in a Deno KV file, `/data/oauth.kv` by default, so mount a
 writable volume at `/data` (`compose.yml` does). Its directory must exist: if the file cannot be
