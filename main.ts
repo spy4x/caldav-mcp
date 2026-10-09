@@ -121,6 +121,11 @@ async function startStdio(
 const RATE_LIMIT = 100;
 /** Wrong tokens each client may send per minute before it gets 429. */
 export const AUTH_FAILURE_LIMIT = 10;
+/**
+ * Consent pages each client may open per minute. Each one may fetch the client's metadata document
+ * and keeps a pending consent in memory, so it gets a tighter budget than other requests.
+ */
+export const CONSENT_PAGE_LIMIT = 10;
 /** Most clients the limiter tracks at once, so a flood of addresses cannot grow memory unbounded. */
 const RATE_LIMIT_MAX_CLIENTS = 10_000;
 /** Largest `POST /mcp` body accepted. One JSON-RPC message is a few kilobytes at most. */
@@ -180,6 +185,7 @@ export function createHttpHandler(
   const limiter = createMemoryRateLimiter({ ...window, limit: RATE_LIMIT });
   // Counts every attempt, then gives the slot back when the token was right: only failures stay.
   const authFailures = createMemoryRateLimiter({ ...window, limit: AUTH_FAILURE_LIMIT });
+  const consentPages = createMemoryRateLimiter({ ...window, limit: CONSENT_PAGE_LIMIT });
   const ipOptions = { trustedProxies: options.trustedProxies ?? [] };
 
   return async (req: Request, info?: PeerInfo): Promise<Response> => {
@@ -196,7 +202,12 @@ export function createHttpHandler(
     if (oauth?.handles(url.pathname)) {
       const decision = limiter.check(client);
       if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
-      if (req.method !== 'POST' || url.pathname !== AUTHORIZE_PATH) return await oauth.fetch(req);
+      if (url.pathname !== AUTHORIZE_PATH) return await oauth.fetch(req);
+      if (req.method !== 'POST') {
+        const page = consentPages.check(client);
+        if (!page.allowed) return tooManyRequests(page.retryAfterMs);
+        return await oauth.fetch(req);
+      }
       // A consent submission carries the owner password: a refusal counts as a failed login.
       const attempt = authFailures.check(client);
       if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
