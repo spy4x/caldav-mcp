@@ -4,6 +4,7 @@ deno.lock
 # Environment files (secrets never committed)
 .env
 .env.*
+!.env.example
 
 # Age encryption key (if added in future)
 .age/

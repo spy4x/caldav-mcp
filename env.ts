@@ -2,6 +2,7 @@
 
 import { type EnvReader, readEnvVar, systemEnv } from '@spy4x/server/config/env';
 import { ipInRanges } from '@spy4x/net/ip';
+import { DEFAULT_OAUTH_KV_PATH, type OAuthConfig } from './oauth.ts';
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
@@ -20,7 +21,21 @@ export interface Env {
    * could forge that header.
    */
   trustedProxies: string[];
+  /** Set when `PUBLIC_URL`, `OWNER_PASSWORD_HASH` and `AUTH_PEPPER` are all set; see `oauth.ts`. */
+  oauth?: OAuthConfig;
 }
+
+/**
+ * The variables that switch OAuth on. Set all three or none. `OAUTH_KV_PATH` is optional and
+ * defaults to {@link DEFAULT_OAUTH_KV_PATH}.
+ */
+export const OAUTH_ENV_VARS = ['PUBLIC_URL', 'OWNER_PASSWORD_HASH', 'AUTH_PEPPER'] as const;
+
+/** The format `createPasswordHasher().hash()` returns. */
+const PASSWORD_HASH = /^pbkdf2-sha256\$[1-9][0-9]{5,7}\$[0-9a-f]{32}\$[0-9a-f]{64}$/;
+
+/** The shortest pepper `createPasswordHasher` accepts. */
+const MIN_PEPPER_LENGTH = 32;
 
 /**
  * Read the configuration once at startup. Blank values count as unset. Throws on a missing
@@ -45,7 +60,63 @@ export function loadEnv(env: EnvReader = systemEnv): Env {
     mcpBearerToken: optional('MCP_BEARER_TOKEN') || undefined,
     logLevel: parseLogLevel(optional('LOG_LEVEL') || 'info'),
     trustedProxies: parseCidrList('TRUSTED_PROXIES', optional('TRUSTED_PROXIES')),
+    oauth: parseOAuth(optional),
   };
+}
+
+/**
+ * OAuth is on when all of {@link OAUTH_ENV_VARS} are set and off when none is. Anything in between
+ * throws, naming the missing variables, so a half-configured server never starts.
+ */
+function parseOAuth(optional: (name: string) => string): OAuthConfig | undefined {
+  const values = OAUTH_ENV_VARS.map((name) => [name, optional(name)] as const);
+  const missing = values.filter(([, value]) => value === '').map(([name]) => name);
+  if (missing.length === OAUTH_ENV_VARS.length) return undefined;
+  if (missing.length > 0) {
+    throw new Error(
+      `OAuth needs ${OAUTH_ENV_VARS.join(', ')} together; missing: ${missing.join(', ')}`,
+    );
+  }
+  const [publicUrl, ownerPasswordHash, authPepper] = values.map(([, value]) => value) as [
+    string,
+    string,
+    string,
+  ];
+  return {
+    publicUrl: parsePublicUrl(publicUrl),
+    ownerPasswordHash: parsePasswordHash(ownerPasswordHash),
+    authPepper: parsePepper(authPepper),
+    kvPath: optional('OAUTH_KV_PATH') || DEFAULT_OAUTH_KV_PATH,
+  };
+}
+
+function parsePublicUrl(raw: string): string {
+  const message =
+    'PUBLIC_URL must be the bare https origin of the server, like https://mcp.example.com';
+  let url: URL;
+  try {
+    url = new URL(raw.replace(/\/+$/, ''));
+  } catch {
+    throw new Error(message);
+  }
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  const scheme = url.protocol === 'https:' || (url.protocol === 'http:' && loopback);
+  if (!scheme || url.origin + '/' !== url.href) throw new Error(message);
+  return url.origin;
+}
+
+function parsePasswordHash(raw: string): string {
+  if (!PASSWORD_HASH.test(raw)) {
+    throw new Error('OWNER_PASSWORD_HASH must be a pbkdf2-sha256 hash; see the README');
+  }
+  return raw;
+}
+
+function parsePepper(raw: string): string {
+  if (raw.length < MIN_PEPPER_LENGTH) {
+    throw new Error(`AUTH_PEPPER must be at least ${MIN_PEPPER_LENGTH} characters`);
+  }
+  return raw;
 }
 
 function parsePort(raw: string): number {

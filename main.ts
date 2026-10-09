@@ -4,7 +4,9 @@
 import { type Env, loadEnv } from './env.ts';
 import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
-import { McpHandler } from './mcp.ts';
+import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
+import { MCP_PATH, type OAuth, openOAuth } from './oauth.ts';
+import { AUTHORIZE_PATH } from '@spy4x/server/mcp-oauth';
 import { registerAllTools } from './tools/index.ts';
 import {
   bearerTokenFromHeaders,
@@ -40,8 +42,8 @@ async function main(): Promise<void> {
 
   // Determine transport
   const args = Deno.args;
-  const useHttp = args.includes('--http') || args.includes('-h') ||
-    !!Deno.env.get('MCP_BEARER_TOKEN');
+  const useHttp = args.includes('--http') || args.includes('-h') || !!env.mcpBearerToken ||
+    !!env.oauth;
 
   if (useHttp) {
     await startHttp(mcp, env, log);
@@ -57,11 +59,16 @@ type Log = (level: string, msg: string) => void;
  * password from every line it writes, so no code path can log either by accident.
  */
 export function createLogger(
-  env: Pick<Env, 'logLevel' | 'mcpBearerToken' | 'caldavPassword'>,
+  env: Pick<Env, 'logLevel' | 'mcpBearerToken' | 'caldavPassword' | 'oauth'>,
   write: (line: string) => void,
 ): Log {
   const levels = ['debug', 'info', 'warn', 'error'];
-  const secrets = [env.mcpBearerToken, env.caldavPassword];
+  const secrets = [
+    env.mcpBearerToken,
+    env.caldavPassword,
+    env.oauth?.ownerPasswordHash,
+    env.oauth?.authPepper,
+  ];
   return (level, msg) => {
     if (levels.indexOf(level) >= levels.indexOf(env.logLevel)) {
       write(formatLogLine(level, msg, secrets));
@@ -114,30 +121,38 @@ async function startStdio(
 const RATE_LIMIT = 100;
 /** Wrong tokens each client may send per minute before it gets 429. */
 export const AUTH_FAILURE_LIMIT = 10;
+/**
+ * Consent pages each client may open per minute. Each one may fetch the client's metadata document
+ * and stores a pending consent, so it gets a tighter budget than other requests.
+ */
+export const CONSENT_PAGE_LIMIT = 10;
 /** Most clients the limiter tracks at once, so a flood of addresses cannot grow memory unbounded. */
 const RATE_LIMIT_MAX_CLIENTS = 10_000;
 /** Largest `POST /mcp` body accepted. One JSON-RPC message is a few kilobytes at most. */
 export const MAX_BODY_BYTES = 1024 * 1024;
 
 /**
- * Where the HTTP transport listens. Refuses to start without `MCP_BEARER_TOKEN`, because the
- * server holds CalDAV credentials and an open port would hand them to anyone who can reach it.
+ * Where the HTTP transport listens. Refuses to start without `MCP_BEARER_TOKEN` or OAuth, because
+ * the server holds CalDAV credentials and an open port would hand them to anyone who can reach it.
  */
 export function httpListenOptions(
-  env: Pick<Env, 'host' | 'port' | 'mcpBearerToken'>,
-): { hostname: string; port: number; token: string } {
-  if (!env.mcpBearerToken) {
-    throw new Error('MCP_BEARER_TOKEN env var is required for HTTP mode');
+  env: Pick<Env, 'host' | 'port' | 'mcpBearerToken' | 'oauth'>,
+): { hostname: string; port: number; token: string | undefined } {
+  if (!env.mcpBearerToken && !env.oauth) {
+    throw new Error('MCP_BEARER_TOKEN or the OAuth env vars are required for HTTP mode');
   }
   return { hostname: env.host, port: env.port, token: env.mcpBearerToken };
 }
 
-function startHttp(mcp: McpHandler, env: Env, log: Log): void {
+async function startHttp(mcp: McpHandler, env: Env, log: Log): Promise<void> {
   const { hostname, port, token } = httpListenOptions(env);
+  // Opened for the life of the process; a database that cannot be opened stops the start.
+  const oauth = env.oauth ? (await openOAuth(env.oauth)).oauth : undefined;
   log('info', `Starting HTTP transport on ${hostname}:${port}...`);
+  if (oauth) log('info', `OAuth on for ${oauth.resource}; tokens kept in ${env.oauth?.kvPath}`);
   Deno.serve(
     { hostname, port },
-    createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies }),
+    createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies, oauth }),
   );
   log('info', `HTTP server listening on ${hostname}:${port}`);
 }
@@ -148,25 +163,30 @@ interface PeerInfo {
 }
 
 /**
- * Build the HTTP request handler. `/health` is open; `/mcp` needs the token as
- * `Authorization: Bearer <token>`, a bare `Authorization: <token>` or `X-Api-Key: <token>`.
- * Tokens in the query string are refused: URLs end up in proxy and access logs.
+ * Build the HTTP request handler. `/health` is open; `/mcp` needs the static token as
+ * `Authorization: Bearer <token>`, a bare `Authorization: <token>` or `X-Api-Key: <token>`, or,
+ * with `oauth`, an access token it issued. Tokens in the query string are refused: URLs end up in
+ * proxy and access logs. With `oauth`, a request without a valid token gets `401` with
+ * `WWW-Authenticate` pointing at the protected resource metadata, and the OAuth routes are open.
  *
  * Clients are rate limited per IP address: the peer address, or the first `X-Forwarded-For` hop
  * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
- * minute, checked before the token comparison, and `RATE_LIMIT` authorized requests a minute.
+ * minute, checked before the token comparison, `CONSENT_PAGE_LIMIT` consent pages a minute, and
+ * `RATE_LIMIT` requests a minute.
  */
 export function createHttpHandler(
   mcp: McpHandler,
-  token: string,
+  token: string | undefined,
   log: Log,
-  options: { trustedProxies?: readonly string[] } = {},
+  options: { trustedProxies?: readonly string[]; oauth?: OAuth } = {},
 ): (req: Request, info?: PeerInfo) => Promise<Response> {
-  const verifier = createTokenVerifier(token);
+  const verifier = token ? createTokenVerifier(token) : undefined;
+  const oauth = options.oauth;
   const window = { windowMs: 60_000, maxBuckets: RATE_LIMIT_MAX_CLIENTS };
   const limiter = createMemoryRateLimiter({ ...window, limit: RATE_LIMIT });
   // Counts every attempt, then gives the slot back when the token was right: only failures stay.
   const authFailures = createMemoryRateLimiter({ ...window, limit: AUTH_FAILURE_LIMIT });
+  const consentPages = createMemoryRateLimiter({ ...window, limit: CONSENT_PAGE_LIMIT });
   const ipOptions = { trustedProxies: options.trustedProxies ?? [] };
 
   return async (req: Request, info?: PeerInfo): Promise<Response> => {
@@ -180,21 +200,37 @@ export function createHttpHandler(
     const peer = addr && 'hostname' in addr ? addr.hostname : undefined;
     const client = clientIpBucket(clientIp(req, peer, 'x-forwarded-for', ipOptions));
 
-    // Reserve, verify and refund with no await between them, so parallel right-token requests
-    // never hold a reserved slot at the same time and cannot exhaust the wrong-token budget.
+    if (oauth?.handles(url.pathname)) {
+      const decision = limiter.check(client);
+      if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
+      // Opening a consent page may fetch a client document and stores a pending consent. Wrong
+      // owner passwords on its submission are capped by the library, for the whole server.
+      if (url.pathname === AUTHORIZE_PATH && req.method === 'GET') {
+        const page = consentPages.check(client);
+        if (!page.allowed) return tooManyRequests(page.retryAfterMs);
+      }
+      return await oauth.fetch(req);
+    }
+
+    // Reserve, verify and refund with no await between them for the static token, so parallel
+    // right-token requests never hold a reserved slot at the same time and cannot exhaust the
+    // wrong-token budget. An OAuth token needs a store lookup, so its slot is held until then.
     const attempt = authFailures.check(client);
     if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
-    if (!isAuthorized(req, verifier)) {
-      // Never log what the client sent: a near-miss token is still a secret.
-      log('debug', `Auth failed for ${req.method} ${url.pathname}`);
-      return json({ error: 'Unauthorized' }, 401);
+    if (!(verifier && isAuthorized(req, verifier))) {
+      const refused = oauth ? await oauth.authenticate(req) : json({ error: 'Unauthorized' }, 401);
+      if (refused) {
+        // Never log what the client sent: a near-miss token is still a secret.
+        log('debug', `Auth failed for ${req.method} ${url.pathname}`);
+        return refused;
+      }
     }
     authFailures.refund(client, attempt.at);
 
     const decision = limiter.check(client);
     if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
 
-    if (url.pathname === '/mcp') {
+    if (url.pathname === MCP_PATH) {
       if (req.method === 'POST') return await handleMcpPost(req, mcp);
       return json({ error: 'Method not allowed' }, 405, { 'Allow': 'POST' });
     }
@@ -214,7 +250,21 @@ function isAuthorized(req: Request, verifier: ReturnType<typeof createTokenVerif
   return candidates.some((candidate) => !!candidate && verifier.verifySync(candidate));
 }
 
+/** Header a Streamable HTTP client sends after initialization with the negotiated version. */
+const PROTOCOL_VERSION_HEADER = 'MCP-Protocol-Version';
+/** Header that carries the session id the server assigns at initialization. */
+export const SESSION_ID_HEADER = 'Mcp-Session-Id';
+
+/**
+ * Answer one Streamable HTTP POST: a JSON-RPC message or batch in, a JSON response out, or `202`
+ * when it held no request. An `initialize` answer carries a new `Mcp-Session-Id`. The server keeps
+ * no per-session state, so later requests are served with or without that header.
+ */
 async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
+  const version = req.headers.get(PROTOCOL_VERSION_HEADER);
+  if (version !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(version)) {
+    return json({ error: `Unsupported ${PROTOCOL_VERSION_HEADER}` }, 400);
+  }
   let body: string;
   try {
     body = await readBoundedText(req, { maxBytes: MAX_BODY_BYTES });
@@ -224,9 +274,15 @@ async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
     throw err;
   }
   const response = await mcp.handleMessage(body);
-  // A notification has no response: acknowledge it without a body.
+  // Notifications and client responses get no answer: acknowledge them without a body.
   if (!response) return new Response(null, { status: 202 });
-  return json(response);
+  const initialized = [response].flat().some(isInitializeResult);
+  return json(response, 200, initialized ? { [SESSION_ID_HEADER]: crypto.randomUUID() } : {});
+}
+
+function isInitializeResult(response: JsonRpcResponse): boolean {
+  const result = response.result;
+  return typeof result === 'object' && result !== null && 'protocolVersion' in result;
 }
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {

@@ -78,3 +78,65 @@ Deno.test('TRUSTED_PROXIES is a comma-separated CIDR list, empty by default', ()
 Deno.test('a missing CalDAV password stops startup', () => {
   assertThrows(() => load({ CALDAV_PASSWORD: undefined }), Error, 'CALDAV_PASSWORD');
 });
+
+const OAUTH = {
+  PUBLIC_URL: 'https://mcp.example.com',
+  OWNER_PASSWORD_HASH: `pbkdf2-sha256$600000$${'0'.repeat(32)}$${'0'.repeat(64)}`,
+  AUTH_PEPPER: 'p'.repeat(32),
+};
+
+Deno.test('OAuth is off when none of its env vars is set', () => {
+  assertEquals(load({}).oauth, undefined);
+});
+
+Deno.test('OAuth is on when all three of its env vars are set', () => {
+  assertEquals(load({ ...OAUTH, PUBLIC_URL: 'https://mcp.example.com/' }).oauth, {
+    publicUrl: 'https://mcp.example.com',
+    ownerPasswordHash: OAUTH.OWNER_PASSWORD_HASH,
+    authPepper: OAUTH.AUTH_PEPPER,
+    kvPath: '/data/oauth.kv',
+  });
+});
+
+Deno.test('OAUTH_KV_PATH moves the OAuth store', () => {
+  assertEquals(load({ ...OAUTH, OAUTH_KV_PATH: '/srv/oauth.kv' }).oauth?.kvPath, '/srv/oauth.kv');
+});
+
+Deno.test('a half-configured OAuth stops startup, naming each missing variable', () => {
+  for (const name of Object.keys(OAUTH)) {
+    const error = assertThrows(() => load({ ...OAUTH, [name]: undefined }), Error);
+    assertEquals(error.message.endsWith(`missing: ${name}`), true, error.message);
+  }
+  assertThrows(
+    () => load({ AUTH_PEPPER: OAUTH.AUTH_PEPPER }),
+    Error,
+    'PUBLIC_URL, OWNER_PASSWORD_HASH',
+  );
+});
+
+Deno.test('PUBLIC_URL must be a bare https origin', () => {
+  const bad = [
+    'mcp.example.com',
+    'http://mcp.example.com',
+    'https://mcp.example.com/mcp',
+    'https://mcp.example.com?x=1',
+    'https://user@mcp.example.com',
+  ];
+  for (const url of bad) {
+    assertThrows(() => load({ ...OAUTH, PUBLIC_URL: url }), Error, 'PUBLIC_URL');
+  }
+  assertEquals(
+    load({ ...OAUTH, PUBLIC_URL: 'http://localhost:3000' }).oauth?.publicUrl,
+    'http://localhost:3000',
+  );
+});
+
+Deno.test('OWNER_PASSWORD_HASH must be a pbkdf2-sha256 hash, not a plain password', () => {
+  for (const hash of ['hunter2', OAUTH.OWNER_PASSWORD_HASH.slice(0, -1)]) {
+    assertThrows(() => load({ ...OAUTH, OWNER_PASSWORD_HASH: hash }), Error, 'OWNER_PASSWORD_HASH');
+  }
+});
+
+Deno.test('AUTH_PEPPER must be at least 32 characters', () => {
+  assertThrows(() => load({ ...OAUTH, AUTH_PEPPER: 'p'.repeat(31) }), Error, 'AUTH_PEPPER');
+});

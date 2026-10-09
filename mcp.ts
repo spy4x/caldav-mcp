@@ -8,7 +8,8 @@ export interface JsonRpcRequest {
   jsonrpc: '2.0';
   /** Absent on a notification, which never gets a response. */
   id?: string | number;
-  method: string;
+  /** Absent on a client's response to a server request. */
+  method?: string;
   params?: Record<string, unknown>;
 }
 
@@ -29,6 +30,9 @@ export interface McpServerInfo {
 /** Protocol versions this server speaks, newest first. */
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
+/** Most messages one batch may hold; a larger batch is refused whole, before any is run. */
+export const MAX_BATCH_SIZE = 20;
+
 export class McpHandler {
   private tools: Map<string, { definition: ToolDefinition; handler: ToolHandler }>;
   private initialized = false;
@@ -48,6 +52,8 @@ export class McpHandler {
    * JSON-RPC 2.0 must never be answered, not even with an error.
    */
   async handleRequest(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+    // A client's answer to a server request: this server sends none, so there is nothing to do.
+    if (req.method === undefined && ('result' in req || 'error' in req)) return null;
     const isNotification = req.id === undefined;
     const id = req.id ?? null;
     if (typeof req.method !== 'string' || (!isNotification && !isValidId(req.id))) {
@@ -110,15 +116,31 @@ export class McpHandler {
     }
   }
 
-  /** Parse and process one JSON-RPC message string. Returns `null` when nothing is to be sent. */
-  async handleMessage(message: string): Promise<JsonRpcResponse | null> {
+  /**
+   * Parse and process one JSON-RPC message string: a single message or a batch (an array), which
+   * protocol 2025-03-26 allows. Returns `null` when nothing is to be sent: a notification, or a
+   * batch of notifications only. A batch gets an array with one response per request in it.
+   */
+  async handleMessage(message: string): Promise<JsonRpcResponse | JsonRpcResponse[] | null> {
     let req: unknown;
     try {
       req = JSON.parse(message);
     } catch {
       return error(null, -32700, 'Parse error');
     }
-    // Batches were removed in protocol 2025-06-18; a non-object is not a request.
+    if (!Array.isArray(req)) return await this.handleOne(req);
+    if (req.length === 0 || req.length > MAX_BATCH_SIZE) {
+      return error(null, -32600, 'Invalid Request');
+    }
+    const responses: JsonRpcResponse[] = [];
+    for (const item of req) {
+      const response = await this.handleOne(item);
+      if (response) responses.push(response);
+    }
+    return responses.length > 0 ? responses : null;
+  }
+
+  private async handleOne(req: unknown): Promise<JsonRpcResponse | null> {
     if (typeof req !== 'object' || req === null || Array.isArray(req)) {
       return error(null, -32600, 'Invalid Request');
     }

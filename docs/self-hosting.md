@@ -5,10 +5,12 @@ Designed for homelab deployments. Compatible with Radicale, Baïkal, Xandikos, a
 ## Compile to binary (recommended)
 
 ```bash
-deno compile -A --output caldav-mcp jsr:@spy4x/caldav-mcp@1
+deno compile -A --unstable-kv --output caldav-mcp jsr:@spy4x/caldav-mcp@1
 ./caldav-mcp                 # stdio (for MCP clients)
 ./caldav-mcp --http          # HTTP on 127.0.0.1:3000; needs MCP_BEARER_TOKEN, set HOST to listen elsewhere
 ```
+
+`--unstable-kv` is needed only for OAuth, which keeps its tokens in Deno KV at `OAUTH_KV_PATH`.
 
 ## Docker
 
@@ -41,7 +43,7 @@ docker pull ghcr.io/spy4x/caldav-mcp:latest
 
 ```bash
 # Install binary
-sudo deno compile -A --output /usr/local/bin/caldav-mcp \
+sudo deno compile -A --unstable-kv --output /usr/local/bin/caldav-mcp \
   jsr:@spy4x/caldav-mcp@1
 
 # Systemd service

@@ -11,8 +11,15 @@ services:
       - CALDAV_USERNAME=${CALDAV_USERNAME}
       - CALDAV_PASSWORD=${CALDAV_PASSWORD}
       - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN}
+      - PUBLIC_URL=${PUBLIC_URL}
+      - OWNER_PASSWORD_HASH=${OWNER_PASSWORD_HASH}
+      - AUTH_PEPPER=${AUTH_PEPPER}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES}
       - HOST=0.0.0.0
       - LOG_LEVEL=info
+    volumes:
+      # OAuth grants and tokens (/data/oauth.kv), so a restart keeps connectors signed in.
+      - caldav-mcp-data:/data
     mem_limit: 128M
     cpus: 0.25
     networks:
@@ -21,3 +28,6 @@ services:
 networks:
   proxy:
     external: true
+
+volumes:
+  caldav-mcp-data:
