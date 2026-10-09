@@ -67,8 +67,12 @@ With OAuth on:
 - After 10 wrong owner passwords in 15 minutes from one client address, approvals from that address
   get `429` until the window ends; the right password from another address still works. After 100
   wrong passwords in 24 hours from all addresses together, every approval gets `429` until the
-  oldest of them is a day old. The counts live in `OAUTH_KV_PATH`, so a restart does not reset
-  them. Connectors already signed in keep working.
+  oldest of them is a day old. The counts live in `OAUTH_KV_PATH`, so a restart does not reset them.
+  Connectors already signed in keep working. So someone who controls about 10 addresses can still
+  block every approval for up to 24 hours, and longer if they keep sending; the README section [Use
+  it from claude.ai](../README.md#use-it-from-claudeai) gives the recovery step (delete the key
+  `["mcp-oauth", "attempts", "total"]` with the server stopped), and
+  https://github.com/spy4x/ts-libs/issues/477 tracks a way in that the limit cannot block.
 - Each grant ends 90 days after the owner approved it; refreshing its tokens does not extend it.
   `caldav-mcp grants list` shows the grants and `caldav-mcp grants revoke <grantId>` signs one
   out; see [Sign a connector out](../README.md#sign-a-connector-out).
