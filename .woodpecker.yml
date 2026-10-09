@@ -6,6 +6,18 @@ steps:
       - deno task test
       - deno publish --dry-run
 
+  # A `v*` tag publishes to JSR with the global token, so the tagged commit must already be on
+  # `main` (reviewed, green CI). A tag on an unmerged branch stops here, before `publish` runs.
+  # Woodpecker's clone is shallow and has no `main`, so fetch it with full depth first.
+  on-main:
+    image: alpine/git:2.47.2
+    when:
+      event: tag
+      ref: refs/tags/v*
+    commands:
+      - git fetch --no-tags --depth=2147483647 origin main
+      - git merge-base --is-ancestor "$${CI_COMMIT_SHA}" FETCH_HEAD || { echo "Refusing to publish, commit $${CI_COMMIT_SHA} is not on main"; exit 1; }
+
   # Publishes to JSR (`jsr:@spy4x/caldav-mcp`) on a `v*` tag, after `check` passed. The tag must
   # match `version` in deno.jsonc. `$$` stops Woodpecker substituting the variable itself.
   publish:
