@@ -63,9 +63,14 @@ function config(kvPath: string): OAuthConfig {
 /**
  * A handler with OAuth on and the static token set, the real tools and the fake CalDAV server. The
  * static token is refused unless `allowBearerTokenWithOAuth`. The OAuth store is an in-memory Deno
- * KV unless `kvPath` names a file. Dispose of it to close the KV.
+ * KV unless `kvPath` names a file. `trustedProxies` are the peers whose `X-Forwarded-For` is
+ * believed, as `TRUSTED_PROXIES` sets them. Dispose of it to close the KV.
  */
-async function setup(kvPath = ':memory:', allowBearerTokenWithOAuth = false) {
+async function setup(
+  kvPath = ':memory:',
+  allowBearerTokenWithOAuth = false,
+  trustedProxies: string[] = [],
+) {
   const network = fakeNetwork();
   const { oauth, close } = await openOAuth(config(kvPath), {
     fetcher: network.fetcher,
@@ -78,6 +83,7 @@ async function setup(kvPath = ':memory:', allowBearerTokenWithOAuth = false) {
     oauth,
     allowBearerTokenWithOAuth,
     allowedOrigins: [ORIGIN],
+    trustedProxies,
   });
   return { handler, logs, calls: network.calls, [Symbol.dispose]: close };
 }
@@ -318,6 +324,29 @@ Deno.test('the right owner password from another address still approves while on
   assertEquals((await approve(ctx.handler, consentId, OWNER_PASSWORD, 2)).status, 302);
 });
 
+Deno.test('behind a trusted proxy, the lockout counts the client address from X-Forwarded-For, not the proxy', async () => {
+  const PROXY = '192.0.2.1';
+  using ctx = await setup(':memory:', false, [PROXY]);
+  const { challenge } = await pkce();
+  const { consentId } = await openConsent(ctx.handler, challenge);
+  const viaProxy = async (password: string, client: string) => {
+    const req = form('/authorize', {
+      consent_id: consentId,
+      decision: 'approve',
+      [OWNER_PASSWORD_FIELD]: password,
+    });
+    req.headers.set('X-Forwarded-For', client);
+    const res = await ctx.handler(req, {
+      remoteAddr: { transport: 'tcp', hostname: PROXY, port: 40000 },
+    });
+    await res.body?.cancel();
+    return res.status;
+  };
+  for (let i = 0; i < 10; i++) assertEquals(await viaProxy('nope', '198.51.100.7'), 403);
+  assertEquals(await viaProxy(OWNER_PASSWORD, '198.51.100.7'), 429);
+  assertEquals(await viaProxy(OWNER_PASSWORD, '198.51.100.8'), 302);
+});
+
 Deno.test('after 100 wrong owner passwords spread over many addresses, every approval gets 429', async () => {
   using ctx = await setup();
   const { challenge } = await pkce();
@@ -492,6 +521,39 @@ Deno.test('grants revoke signs one client out while the server runs and keeps th
     assertEquals(await runGrantsCommand(['list'], kvPath, output), 0);
     assertEquals(out.length, 1, out.join('\n'));
     assert(!out[0]!.startsWith(grantId), out[0]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test('caldav-mcp grants in a second process revokes a grant while the server holds oauth.kv open', async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const kvPath = `${dir}/oauth.kv`;
+    using ctx = await setup(kvPath);
+    const first = await signIn(ctx.handler);
+    const second = await signIn(ctx.handler);
+    /** Runs `caldav-mcp grants …` as its own Deno process, the way `docker exec` does. */
+    const grants = async (...args: string[]) => {
+      const { code, stdout, stderr } = await new Deno.Command(Deno.execPath(), {
+        args: ['run', '-A', '--unstable-kv', 'main.ts', 'grants', ...args],
+        cwd: import.meta.dirname,
+        env: { OAUTH_KV_PATH: kvPath },
+      }).output();
+      const text = new TextDecoder();
+      assertEquals(code, 0, text.decode(stderr));
+      return text.decode(stdout).trim().split('\n');
+    };
+    const listed = await grants('list');
+    assertEquals(listed.length, 2, listed.join('\n'));
+    await grants('revoke', listed[0]!.split(' ')[0]!);
+    const ping = async (token: string) => {
+      const res = await ctx.handler(rpc(PING, { 'Authorization': `Bearer ${token}` }));
+      await res.body?.cancel();
+      return res.status;
+    };
+    assertEquals(await ping(first), 401);
+    assertEquals(await ping(second), 200);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

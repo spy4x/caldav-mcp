@@ -1,7 +1,7 @@
 // ── `caldav-mcp grants`: the owner's view of who is signed in ──
 // Lists the OAuth grants the owner approved and revokes one, straight from the Deno KV store, so a
 // lost or leaked connector can be signed out without deleting oauth.kv. Safe while the server runs:
-// Deno KV lets a second process open the same file.
+// Deno KV lets a second process open the same file (tested in oauth_test.ts).
 
 import type { GrantRecord, OAuthStore } from '@spy4x/server/mcp-oauth';
 import { KvOAuthStore } from '@spy4x/server/mcp-oauth/kv-store';
@@ -70,7 +70,8 @@ export async function runGrantsCommand(
   }
   let kv: Deno.Kv;
   try {
-    // Deno KV creates a missing file; refuse instead, so a wrong path is not mistaken for no grants.
+    // Deno KV creates a missing file; refuse instead, so a wrong path is not mistaken for no
+    // grants.
     await Deno.stat(kvPath);
     kv = await Deno.openKv(kvPath);
   } catch (err) {
