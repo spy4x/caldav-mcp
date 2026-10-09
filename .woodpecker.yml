@@ -4,3 +4,16 @@ steps:
     commands:
       - deno task check
       - deno task test
+
+  # Publishes to JSR (`jsr:@spy4x/caldav-mcp`) on a `v*` tag, after `check` passed. The tag must
+  # match `version` in deno.jsonc. `$$` stops Woodpecker substituting the variable itself.
+  publish:
+    image: denoland/deno:2.9.7
+    when:
+      event: tag
+      ref: refs/tags/v*
+    environment:
+      JSR_TOKEN:
+        from_secret: JSR_TOKEN
+    commands:
+      - deno publish --token "$${JSR_TOKEN}"
