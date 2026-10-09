@@ -372,6 +372,32 @@ Deno.test('task and event tools refuse a URL outside a listed calendar without s
   assert(fake.calendars.has(TASKS));
 });
 
+Deno.test('query_events sends the date range to the server', async () => {
+  const { engine, fake } = setup();
+  unwrap(
+    await engine.queryEvents({
+      from: new Date('2026-10-01T00:00:00Z'),
+      to: new Date('2026-11-01T00:00:00Z'),
+    }),
+  );
+  const report = fake.requests.find((r) => r.method === 'REPORT')!;
+  assert(
+    /time-range start="20261001T000000Z" end="20261101T000000Z"/.test(report.body),
+    report.body,
+  );
+});
+
+Deno.test('the event text filter searches description and location too', async () => {
+  const { engine, fake } = setup();
+  fake.objects.set(MEETING_PATH, {
+    etag: MEETING_ETAG,
+    data: MEETING.replace('SUMMARY:Team sync', 'SUMMARY:Team sync\r\nLOCATION:Room 4'),
+  });
+  const found = unwrap(await engine.queryEvents({ text: 'room 4' }));
+  assertEquals(found.events.map((e) => e.url), [url(MEETING_PATH)]);
+  assertEquals(unwrap(await engine.queryEvents({ text: 'room 5' })).total, 0);
+});
+
 Deno.test('completing an already completed task keeps its completion date', async () => {
   const { engine, fake } = setup();
   const result = unwrap(
