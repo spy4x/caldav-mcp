@@ -1,95 +1,107 @@
-// ── CalDAV domain types ──
+// ── Shapes the tools return ──
+// Dates are text as `formatIcalDate` writes them; statuses are their iCalendar names.
 
-export enum ComponentType {
-  VEVENT = 1,
-  VTODO = 2,
-  VJOURNAL = 3,
+/** A failed engine call: a stable code for the model to branch on, and a message. */
+export interface EngineError {
+  /** A `CalDavErrorCode` name such as `Conflict` or `NotFound`, or one of the engine's own. */
+  code: string;
+  message: string;
 }
 
-export interface Calendar {
+/** `{ success, output, error }`, the shape every engine call returns. */
+export type EngineResult<T> =
+  | { success: true; output: T; error: null }
+  | { success: false; output: null; error: EngineError };
+
+export interface CalendarInfo {
   url: string;
   displayName: string;
-  components: ComponentType[];
+  /** Component names it accepts, such as `VTODO`; empty means any. */
+  components: string[];
   color?: string;
-  description?: string;
   ctag?: string;
 }
 
-export interface RelatedTo {
-  uid: string;
-  reltype: 'PARENT' | 'CHILD' | 'SIBLING';
-}
-
-export interface Todo {
-  summary: string;
-  description?: string;
-  categories?: string[]; // RFC 5545 CATEGORIES
-  status: TodoStatus;
-  priority?: number; // 1-9, RFC 5545
-  due?: string; // ISO 8601
-  completed?: string; // ISO 8601
-  percentComplete?: number; // 0-100
-  relatedTo?: RelatedTo[]; // Related tasks (RFC 5545 RELATED-TO)
+/** One task in a `query_todos` list. */
+export interface TodoSummary {
   url: string;
-  etag: string;
-  calendarName: string;
-  uid: string;
-}
-
-export enum TodoStatus {
-  NEEDS_ACTION = 1,
-  IN_PROCESS = 2,
-  COMPLETED = 3,
-  CANCELLED = 4,
-}
-
-export const TodoStatusLabel: Record<TodoStatus, string> = {
-  [TodoStatus.NEEDS_ACTION]: 'NEEDS-ACTION',
-  [TodoStatus.IN_PROCESS]: 'IN-PROCESS',
-  [TodoStatus.COMPLETED]: 'COMPLETED',
-  [TodoStatus.CANCELLED]: 'CANCELLED',
-};
-
-export const LabelTodoStatus: Record<string, TodoStatus> = {
-  'NEEDS-ACTION': TodoStatus.NEEDS_ACTION,
-  'IN-PROCESS': TodoStatus.IN_PROCESS,
-  'COMPLETED': TodoStatus.COMPLETED,
-  'CANCELLED': TodoStatus.CANCELLED,
-};
-
-export interface Event {
-  summary: string;
-  description?: string;
-  start: string; // ISO 8601
-  end: string; // ISO 8601
-  location?: string;
-  url: string;
-  etag: string;
-  calendarName: string;
-  uid: string;
+  etag: string | null;
+  summary?: string;
   status?: string;
+  due?: string;
+  priority?: number;
+  /** Present and true when the task has a repeat rule. */
+  repeats?: true;
+  calendar: string;
+}
+
+/** Everything the tools show about one task. */
+export interface TodoDetail {
+  url: string;
+  etag: string | null;
+  calendarUrl: string;
+  uid?: string;
+  summary?: string;
+  description?: string;
+  status?: string;
+  priority?: number;
+  start?: string;
+  due?: string;
+  completed?: string;
+  percentComplete?: number;
+  categories: string[];
+  /** The UID of the parent task (RELATED-TO without RELTYPE, or RELTYPE=PARENT). */
+  parent?: string;
+  relatedTo: { uid: string; type: string }[];
+  rrule?: string;
+  sortOrder?: number;
+  /** Reminders, read-only: action and trigger as written. */
+  reminders: { action?: string; trigger?: string }[];
 }
 
 export interface TodoQueryResult {
+  /** Tasks matching the filters, before `limit`. */
   total: number;
   byStatus: Record<string, number>;
   byPriority: { high: number; medium: number; low: number; none: number };
   overdue: number;
+  /** True when `todos` holds fewer than `total`. */
   truncated: boolean;
-  todos: TodoSummary[];
+  todos: (TodoSummary | TodoDetail)[];
+  /** Objects whose iCalendar text could not be read, so they are not counted. */
+  unreadable?: number;
+  /** Calendars that could not be read; the counts above leave them out. */
+  failedCalendars?: { url: string; code: string; message: string }[];
 }
 
-export interface TodoSummary {
-  summary: string;
-  description?: string;
-  categories?: string[];
-  status: string;
-  priority?: number;
-  due?: string;
-  relatedTo?: string[] | { uid: string; reltype: string }[];
-  calendarName: string;
+export interface EventSummary {
   url: string;
-  etag: string;
+  etag: string | null;
+  summary?: string;
+  start?: string;
+  end?: string;
+  location?: string;
+  status?: string;
+  repeats?: true;
+  calendar: string;
+}
+
+export interface EventDetail {
+  url: string;
+  etag: string | null;
+  calendarUrl: string;
+  summary?: string;
+  start?: string;
+  end?: string;
+  location?: string;
+  status?: string;
+  repeats?: true;
+  uid?: string;
+  description?: string;
+  duration?: string;
+  categories: string[];
+  rrule?: string;
+  reminders: { action?: string; trigger?: string }[];
 }
 
 export interface EventQueryResult {
@@ -97,20 +109,13 @@ export interface EventQueryResult {
   upcoming: number;
   truncated: boolean;
   events: EventSummary[];
+  unreadable?: number;
+  failedCalendars?: { url: string; code: string; message: string }[];
 }
 
-export interface EventSummary {
-  summary: string;
-  description?: string;
-  start: string;
-  end: string;
-  location?: string;
-  calendarName: string;
+/** The outcome of a write: where the object is and the etag to use for the next write. */
+export interface WriteResult {
   url: string;
-  etag: string;
-}
-
-export interface PriorityFilter {
-  min?: number;
-  max?: number;
+  /** `null` when the server sent none and a re-read failed; call get_todo/get_event for it. */
+  etag: string | null;
 }

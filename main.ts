@@ -2,7 +2,7 @@
 // Entry point. Parses args, initializes engine, starts stdio or HTTP transport.
 
 import { type Env, loadEnv } from './env.ts';
-import { CalDavClient } from './caldav/client.ts';
+import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
 import { McpHandler } from './mcp.ts';
 import { registerAllTools } from './tools/index.ts';
@@ -23,7 +23,10 @@ async function main(): Promise<void> {
   log('info', `CalDAV server: ${env.caldavUrl}`);
 
   // Initialize
-  const client = new CalDavClient({ env });
+  const client = createCalDavClient({
+    serverUrl: env.caldavUrl,
+    auth: { username: env.caldavUsername, password: env.caldavPassword },
+  });
   const engine = new QueryEngine(client);
 
   const mcp = new McpHandler({ name: 'caldav-mcp', version: VERSION });
