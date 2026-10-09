@@ -6,6 +6,7 @@ import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
 import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
 import { MCP_PATH, type OAuth, openOAuth } from './oauth.ts';
+import { runGrantsCommand } from './grants.ts';
 import { AUTHORIZE_PATH } from '@spy4x/server/mcp-oauth';
 import { registerAllTools } from './tools/index.ts';
 import {
@@ -24,6 +25,9 @@ import {
 export const VERSION = '1.2.0';
 
 async function main(): Promise<void> {
+  // `caldav-mcp grants …` manages OAuth grants and exits; it needs no CalDAV settings.
+  if (Deno.args[0] === 'grants') Deno.exit(await runGrantsCommand(Deno.args.slice(1)));
+
   const env = loadEnv();
   const log = createLogger(env, (line) => console.error(line));
 

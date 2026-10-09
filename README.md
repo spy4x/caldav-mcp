@@ -133,10 +133,32 @@ secret empty.
 
 **5. Sign in.** Claude opens a consent page on your server. It shows who is asking and where the
 approval goes (`claude.ai`). Type your owner password and press **Allow**. A wrong password shows
-the page again with "Wrong password. Try again." After 10 wrong passwords in 15 minutes, from anyone,
-approvals get `429` until the 15 minutes are over; connectors already signed in keep working. Claude
-then lists the tools, and the connector works in the Claude apps on every device signed in to your
-account. A restart or a redeploy keeps it signed in.
+the page again with "Wrong password. Try again." After 10 wrong passwords in 15 minutes from one
+address, approvals from that address get `429` until the 15 minutes are over, while your own
+address can still approve; after 100 in a day from all addresses together, every approval gets
+`429` for a while. Connectors already signed in keep working. Claude then lists the tools, and the
+connector works in the Claude apps on every device signed in to your account. A restart or a
+redeploy keeps it signed in. Each sign-in lasts 90 days from your approval; after that, Claude
+asks you to sign in again.
+
+### Sign a connector out
+
+If a device with Claude signed in is lost, or you no longer trust a connector, revoke its grant.
+Run the command where the server runs, for example in its container:
+
+```bash
+docker exec <container> caldav-mcp grants list           # one line per signed-in connector
+docker exec <container> caldav-mcp grants revoke <grantId>
+```
+
+`list` prints each grant's id, the client's host, when you approved it and when it ends. `revoke`
+signs that one connector out at once and keeps every other one signed in; it works while the
+server runs. From a checkout, `deno task grants list` does the same, reading `OAUTH_KV_PATH`.
+
+A connector approved before version 1.3.0 has no grant record until it next refreshes its token,
+which it does the first time it is used after its 15-minute access token runs out. If you need to sign it out before then, sign out
+everything: stop the server, delete the `oauth.kv` file (and its `-shm` and `-wal` files), and
+start it again. Every connector then asks you to sign in again.
 
 ## Development
 

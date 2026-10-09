@@ -4,7 +4,7 @@
   "license": "MIT",
   "exports": "./main.ts",
   "publish": {
-    "include": ["main.ts", "env.ts", "mcp.ts", "oauth.ts", "caldav/**/*.ts", "tools/**/*.ts", "LICENSE", "README.md"],
+    "include": ["main.ts", "env.ts", "mcp.ts", "oauth.ts", "grants.ts", "caldav/**/*.ts", "tools/**/*.ts", "LICENSE", "README.md"],
     "exclude": ["**/*_test.ts", "caldav/testing"]
   },
   "description": "Lightweight CalDAV MCP server — events + todos for AI agents",
@@ -17,6 +17,8 @@
     "test": "deno test -A --unstable-kv",
     "compile": "deno compile -A --unstable-kv --target x86_64-unknown-linux-gnu --output caldav-mcp main.ts",
     "check": "deno lint && deno fmt --check && deno check --unstable-kv main.ts",
+    // Lists the OAuth grants, or revokes one: `deno task grants list`, `deno task grants revoke <id>`.
+    "grants": "deno run -A --unstable-kv main.ts grants",
     // Prints the OWNER_PASSWORD_HASH for a password read from stdin; needs AUTH_PEPPER set.
     "password:hash": "deno run --allow-env=AUTH_PEPPER @spy4x/server/sign-in/password-hash"
   },

@@ -3,6 +3,7 @@
 import { CONSENT_PAGE_LIMIT, createHttpHandler } from './main.ts';
 import { McpHandler } from './mcp.ts';
 import { type OAuthConfig, openOAuth } from './oauth.ts';
+import { runGrantsCommand } from './grants.ts';
 import { registerAllTools } from './tools/index.ts';
 import { setup as caldavSetup } from './caldav/testing/fixtures.ts';
 import { assert, assertEquals, assertMatch, assertRejects } from 'std/assert/mod.ts';
@@ -458,6 +459,39 @@ Deno.test('a token issued before a restart still works after it', async () => {
     const res = await after.handler(rpc(PING, { 'Authorization': `Bearer ${token}` }));
     assertEquals(res.status, 200);
     assertEquals(await res.json(), { jsonrpc: '2.0', id: 1, result: {} });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test('grants revoke signs one client out while the server runs and keeps the other signed in', async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const kvPath = `${dir}/oauth.kv`;
+    using ctx = await setup(kvPath);
+    const first = await signIn(ctx.handler);
+    const second = await signIn(ctx.handler);
+    const out: string[] = [];
+    const output = { out: (line: string) => out.push(line), err: (line: string) => out.push(line) };
+
+    assertEquals(await runGrantsCommand(['list'], kvPath, output), 0);
+    assertEquals(out.length, 2, out.join('\n'));
+    assert(out.every((line) => line.includes('claude.ai')), out.join('\n'));
+    const grantId = out[0]!.split(' ')[0]!;
+
+    assertEquals(await runGrantsCommand(['revoke', grantId], kvPath, output), 0);
+    const ping = async (token: string) => {
+      const res = await ctx.handler(rpc(PING, { 'Authorization': `Bearer ${token}` }));
+      await res.body?.cancel();
+      return res.status;
+    };
+    assertEquals(await ping(first), 401);
+    assertEquals(await ping(second), 200);
+
+    out.length = 0;
+    assertEquals(await runGrantsCommand(['list'], kvPath, output), 0);
+    assertEquals(out.length, 1, out.join('\n'));
+    assert(!out[0]!.startsWith(grantId), out[0]);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
