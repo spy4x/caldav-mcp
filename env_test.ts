@@ -65,11 +65,14 @@ Deno.test('LOG_LEVEL must be a known level', () => {
   assertThrows(() => load({ LOG_LEVEL: 'verbose' }), Error, 'LOG_LEVEL');
 });
 
-Deno.test('X-Forwarded-For is trusted only when TRUST_PROXY is "true"', () => {
-  assertEquals(load({}).trustProxy, false);
-  assertEquals(load({ TRUST_PROXY: 'true' }).trustProxy, true);
-  assertEquals(load({ TRUST_PROXY: 'false' }).trustProxy, false);
-  assertThrows(() => load({ TRUST_PROXY: 'yes' }), Error, 'TRUST_PROXY');
+Deno.test('TRUSTED_PROXIES is a comma-separated CIDR list, empty by default', () => {
+  assertEquals(load({}).trustedProxies, []);
+  assertEquals(load({ TRUSTED_PROXIES: '172.16.0.0/12, 10.0.0.1/32,' }).trustedProxies, [
+    '172.16.0.0/12',
+    '10.0.0.1/32',
+  ]);
+  assertThrows(() => load({ TRUSTED_PROXIES: 'true' }), Error, 'TRUSTED_PROXIES');
+  assertThrows(() => load({ TRUSTED_PROXIES: '10.0.0.0/33' }), Error, 'TRUSTED_PROXIES');
 });
 
 Deno.test('a missing CalDAV password stops startup', () => {

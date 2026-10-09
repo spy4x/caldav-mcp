@@ -112,6 +112,8 @@ async function startStdio(
 
 /** Requests each client may make per minute. */
 const RATE_LIMIT = 100;
+/** Wrong tokens each client may send per minute before it gets 429. */
+export const AUTH_FAILURE_LIMIT = 10;
 /** Most clients the limiter tracks at once, so a flood of addresses cannot grow memory unbounded. */
 const RATE_LIMIT_MAX_CLIENTS = 10_000;
 /** Largest `POST /mcp` body accepted. One JSON-RPC message is a few kilobytes at most. */
@@ -135,7 +137,7 @@ function startHttp(mcp: McpHandler, env: Env, log: Log): void {
   log('info', `Starting HTTP transport on ${hostname}:${port}...`);
   Deno.serve(
     { hostname, port },
-    createHttpHandler(mcp, token, log, { trustProxy: env.trustProxy }),
+    createHttpHandler(mcp, token, log, { trustedProxies: env.trustedProxies }),
   );
   log('info', `HTTP server listening on ${hostname}:${port}`);
 }
@@ -150,22 +152,22 @@ interface PeerInfo {
  * `Authorization: Bearer <token>`, a bare `Authorization: <token>` or `X-Api-Key: <token>`.
  * Tokens in the query string are refused: URLs end up in proxy and access logs.
  *
- * Authorized clients are rate limited per IP address: the peer address, or the first
- * `X-Forwarded-For` hop when `trustProxy` says a reverse proxy sets that header.
+ * Clients are rate limited per IP address: the peer address, or the first `X-Forwarded-For` hop
+ * when the peer is one of `trustedProxies`. Each client gets `AUTH_FAILURE_LIMIT` wrong tokens a
+ * minute, checked before the token comparison, and `RATE_LIMIT` authorized requests a minute.
  */
 export function createHttpHandler(
   mcp: McpHandler,
   token: string,
   log: Log,
-  options: { trustProxy?: boolean } = {},
+  options: { trustedProxies?: readonly string[] } = {},
 ): (req: Request, info?: PeerInfo) => Promise<Response> {
   const verifier = createTokenVerifier(token);
-  const limiter = createMemoryRateLimiter({
-    windowMs: 60_000,
-    limit: RATE_LIMIT,
-    maxBuckets: RATE_LIMIT_MAX_CLIENTS,
-  });
-  const trustedHeader = options.trustProxy ? 'x-forwarded-for' : false;
+  const window = { windowMs: 60_000, maxBuckets: RATE_LIMIT_MAX_CLIENTS };
+  const limiter = createMemoryRateLimiter({ ...window, limit: RATE_LIMIT });
+  // Counts every attempt, then gives the slot back when the token was right: only failures stay.
+  const authFailures = createMemoryRateLimiter({ ...window, limit: AUTH_FAILURE_LIMIT });
+  const ipOptions = { trustedProxies: options.trustedProxies ?? [] };
 
   return async (req: Request, info?: PeerInfo): Promise<Response> => {
     const url = new URL(req.url);
@@ -174,19 +176,21 @@ export function createHttpHandler(
       return json({ status: 'ok', version: VERSION });
     }
 
+    const addr = info?.remoteAddr;
+    const peer = addr && 'hostname' in addr ? addr.hostname : undefined;
+    const client = clientIpBucket(clientIp(req, peer, 'x-forwarded-for', ipOptions));
+
+    const attempt = authFailures.check(client);
+    if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
     if (!(await isAuthorized(req, verifier))) {
       // Never log what the client sent: a near-miss token is still a secret.
       log('debug', `Auth failed for ${req.method} ${url.pathname}`);
       return json({ error: 'Unauthorized' }, 401);
     }
+    authFailures.refund(client, attempt.at);
 
-    const addr = info?.remoteAddr;
-    const peer = addr && 'hostname' in addr ? addr.hostname : undefined;
-    const decision = limiter.check(clientIpBucket(clientIp(req, peer, trustedHeader)));
-    if (!decision.allowed) {
-      const retryAfter = String(Math.max(1, Math.ceil(decision.retryAfterMs / 1000)));
-      return json({ error: 'Rate limit exceeded' }, 429, { 'Retry-After': retryAfter });
-    }
+    const decision = limiter.check(client);
+    if (!decision.allowed) return tooManyRequests(decision.retryAfterMs);
 
     if (url.pathname === '/mcp') {
       if (req.method === 'POST') return await handleMcpPost(req, mcp);
@@ -195,6 +199,11 @@ export function createHttpHandler(
 
     return json({ error: 'Not found' }, 404);
   };
+}
+
+function tooManyRequests(retryAfterMs: number): Response {
+  const retryAfter = String(Math.max(1, Math.ceil(retryAfterMs / 1000)));
+  return json({ error: 'Rate limit exceeded' }, 429, { 'Retry-After': retryAfter });
 }
 
 /** Check the `Authorization` header, then `X-Api-Key`, through the constant-time verifier. */

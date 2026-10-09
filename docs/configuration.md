@@ -11,7 +11,7 @@ All settings are environment variables, read once at startup.
 | `PORT` | `3000` | HTTP port (for `--http` mode) |
 | `MCP_BEARER_TOKEN` | — | Token for HTTP mode. Required there: without it `--http` refuses to start. Setting it also turns HTTP mode on |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
-| `TRUST_PROXY` | `false` | `true` when a reverse proxy sets `X-Forwarded-For`: the rate limit then counts each client behind it separately. Leave `false` when clients can reach the port directly, or they can forge the header |
+| `TRUSTED_PROXIES` | — | Comma-separated CIDR ranges of the reverse proxies in front of HTTP mode, like `172.16.0.0/12` for a Docker network. `X-Forwarded-For` is read only from a peer inside them, so the rate limit counts each client behind the proxy separately. Empty trusts no one: any client could forge the header |
 
 ## HTTP mode
 
@@ -23,9 +23,10 @@ token. Every other route needs `MCP_BEARER_TOKEN`, sent as one of:
 - `X-Api-Key: <token>`
 
 A token in the query string (`?api_key=`) is refused, because URLs end up in proxy and access logs.
-A failed login is logged without the value the client sent, and every log line has the token and
-the CalDAV password redacted.
+A failed login is logged without the value the client sent, and every line written through the
+logger has the token and the CalDAV password redacted.
 
-Each client may send 100 requests per minute; the next one gets `429` with `Retry-After`. A client
-is its IP address: the connecting peer, or with `TRUST_PROXY=true` the first `X-Forwarded-For`
-hop. A request body over 1 MiB gets `413`.
+A client is its IP address: the connecting peer, or the first `X-Forwarded-For` hop when the peer
+is in `TRUSTED_PROXIES`. Each client may send 10 wrong tokens per minute; after that every request
+from it gets `429` with `Retry-After` until the minute is over, before its token is even checked.
+Each client may also send 100 authorized requests per minute. A request body over 1 MiB gets `413`.

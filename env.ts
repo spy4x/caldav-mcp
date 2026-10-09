@@ -1,6 +1,7 @@
 // ── Environment config with defaults ──
 
 import { type EnvReader, readEnvVar, systemEnv } from 'jsr:@spy4x/server@1.40.0/config';
+import { ipInRanges } from 'jsr:@spy4x/net@1.40.0/ip';
 
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
@@ -14,15 +15,16 @@ export interface Env {
   mcpBearerToken?: string;
   logLevel: typeof LOG_LEVELS[number];
   /**
-   * Whether a reverse proxy sits in front of the HTTP transport. Only then does the rate limiter
-   * key clients by `X-Forwarded-For`; otherwise any client could forge that header.
+   * CIDR ranges of the reverse proxies in front of the HTTP transport. The rate limiter reads
+   * `X-Forwarded-For` only from a peer inside one of them; empty trusts no one, since any client
+   * could forge that header.
    */
-  trustProxy: boolean;
+  trustedProxies: string[];
 }
 
 /**
  * Read the configuration once at startup. Blank values count as unset. Throws on a missing
- * required value or on a `PORT`, `LOG_LEVEL` or `TRUST_PROXY` it cannot use, naming the variable
+ * required value or on a `PORT`, `LOG_LEVEL` or `TRUSTED_PROXIES` it cannot use, naming the variable
  * but never echoing its value.
  */
 export function loadEnv(env: EnvReader = systemEnv): Env {
@@ -42,7 +44,7 @@ export function loadEnv(env: EnvReader = systemEnv): Env {
     port: parsePort(optional('PORT') || '3000'),
     mcpBearerToken: optional('MCP_BEARER_TOKEN') || undefined,
     logLevel: parseLogLevel(optional('LOG_LEVEL') || 'info'),
-    trustProxy: parseBoolean('TRUST_PROXY', optional('TRUST_PROXY') || 'false'),
+    trustedProxies: parseCidrList('TRUSTED_PROXIES', optional('TRUSTED_PROXIES')),
   };
 }
 
@@ -60,8 +62,13 @@ function parseLogLevel(raw: string): Env['logLevel'] {
   return level;
 }
 
-function parseBoolean(name: string, raw: string): boolean {
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  throw new Error(`${name} must be "true" or "false"`);
+function parseCidrList(name: string, raw: string): string[] {
+  const ranges = raw.split(',').map((r) => r.trim()).filter((r) => r !== '');
+  try {
+    // Throws a RangeError on a malformed range; fail at startup, not on every request.
+    ipInRanges('127.0.0.1', ranges);
+  } catch {
+    throw new Error(`${name} must be a comma-separated list of CIDR ranges, like 172.16.0.0/12`);
+  }
+  return ranges;
 }

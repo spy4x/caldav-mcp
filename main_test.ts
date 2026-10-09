@@ -1,12 +1,18 @@
 // ── HTTP transport tests ──
 
-import { createHttpHandler, createLogger, httpListenOptions, MAX_BODY_BYTES } from './main.ts';
+import {
+  AUTH_FAILURE_LIMIT,
+  createHttpHandler,
+  createLogger,
+  httpListenOptions,
+  MAX_BODY_BYTES,
+} from './main.ts';
 import { McpHandler } from './mcp.ts';
 import { assertEquals, assertThrows } from 'std/assert/mod.ts';
 
 const TOKEN = 'test-token-123';
 
-function setup(options: { trustProxy?: boolean } = {}) {
+function setup(options: { trustedProxies?: string[] } = {}) {
   const logs: string[] = [];
   const handler = createHttpHandler(
     new McpHandler({ name: 'test', version: '0.0.0' }),
@@ -131,16 +137,18 @@ Deno.test('the 101st request in a minute from one client gets 429 with Retry-Aft
   assertEquals(other.status, 200);
 });
 
-Deno.test('a forged X-Forwarded-For does not escape the limit when no proxy is trusted', async () => {
-  const { handler } = setup();
-  let n = 0;
-  const res = await burst(handler, 101, () => ({ 'X-Forwarded-For': `198.51.100.${n++ % 250}` }));
-  await res.body?.cancel();
-  assertEquals(res.status, 429);
+Deno.test('a forged X-Forwarded-For does not escape the limit from a peer that is not a trusted proxy', async () => {
+  for (const trustedProxies of [[], ['10.0.0.0/8']]) {
+    const { handler } = setup({ trustedProxies });
+    let n = 0;
+    const res = await burst(handler, 101, () => ({ 'X-Forwarded-For': `198.51.100.${n++ % 250}` }));
+    await res.body?.cancel();
+    assertEquals(res.status, 429);
+  }
 });
 
 Deno.test('behind a trusted proxy each X-Forwarded-For client gets its own budget', async () => {
-  const { handler } = setup({ trustProxy: true });
+  const { handler } = setup({ trustedProxies: ['10.0.0.0/8'] });
   const proxy = peer('10.0.0.1');
   const first = await burst(handler, 101, () => ({ 'X-Forwarded-For': '198.51.100.1' }), proxy);
   await first.body?.cancel();
@@ -182,4 +190,41 @@ Deno.test('log lines below LOG_LEVEL are dropped', () => {
   log('info', 'quiet');
   log('warn', 'loud');
   assertEquals(lines, ['[WARN] loud']);
+});
+
+/** Send `count` requests with a wrong token from one address and return the last response. */
+async function wrongTokens(
+  handler: ReturnType<typeof setup>['handler'],
+  count: number,
+): Promise<Response> {
+  let res: Response | undefined;
+  for (let i = 0; i < count; i++) {
+    await res?.body?.cancel();
+    res = await handler(post(PING, { 'Authorization': 'Bearer wrong' }), peer('192.0.2.9'));
+  }
+  return res!;
+}
+
+Deno.test('the 11th wrong token in a minute from one address gets 429 before the token is compared', async () => {
+  const { handler } = setup();
+  const last = await wrongTokens(handler, AUTH_FAILURE_LIMIT);
+  await last.body?.cancel();
+  assertEquals(last.status, 401);
+  const over = await wrongTokens(handler, 1);
+  await over.body?.cancel();
+  assertEquals(over.status, 429);
+  assertEquals(Number(over.headers.get('Retry-After')) > 0, true);
+  const right = await handler(post(PING, AUTH), peer('192.0.2.9'));
+  await right.body?.cancel();
+  assertEquals(right.status, 429);
+});
+
+Deno.test('right tokens do not count toward the wrong-token limit', async () => {
+  const { handler } = setup();
+  const ok = await burst(handler, AUTH_FAILURE_LIMIT * 2, () => ({}), peer('192.0.2.9'));
+  await ok.body?.cancel();
+  assertEquals(ok.status, 200);
+  const wrong = await wrongTokens(handler, 1);
+  await wrong.body?.cancel();
+  assertEquals(wrong.status, 401);
 });
