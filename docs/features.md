@@ -81,8 +81,24 @@ get_todo → { "summary": "Fix auth bug", "uid": "fix-auth-bug-123", "parent": "
 update_todo({ url, etag, parent: null })   → the task is no longer a subtask
 ```
 
-Reminders (VALARM) are shown under `reminders` and kept on every edit, but cannot yet be set
-through the tools.
+Reminders (VALARM) are shown under `reminders`. `create_todo`, `update_todo`, `create_event` and
+`update_event` take an `alarms` list to set them:
+
+```json
+{ "alarms": [{ "before": "PT1H" }, { "at": "2026-10-12T08:00:00Z" }] }
+```
+
+- **`before`** is an ISO 8601 duration (`PT15M`, `PT1H`, `P1D`, `PT0S` for "at the time"). On a task
+  it counts from the **due** time, the "before due" reminder Tasks.org shows, so the task needs a
+  due date. On an event it counts from the **start**.
+- **`at`** is a fixed moment in UTC.
+- **The list replaces every reminder.** A reminder that is already there and equal is kept byte
+  for byte, with the lines other apps added to it. `null` removes all of them. Leaving `alarms`
+  out keeps them.
+- Writing a new reminder the task or event has no date for is refused with a message naming the
+  missing date, and nothing is written. Removing the date later (`{"due": null}`) is allowed and
+  leaves the reminders already there in place.
+- **`at`** also accepts a time with an offset (`+07:00`); it is converted to UTC.
 
 ## Examples
 
