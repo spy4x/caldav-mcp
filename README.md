@@ -33,8 +33,9 @@ and pulled in a large npm install. I run it on my own homelab next to my calenda
   overdue?" is one request, not one per calendar.
 - **Answers an assistant can use.** Queries return totals, counts by status and priority and the
   number of overdue tasks next to the list, capped at 200 items with a `truncated` flag.
-- **No npm install.** Built on Deno and web standards (Fetch, Streams, ES modules); the only
-  outside library is [Hono](https://hono.dev), under the OAuth routes. No `node_modules`.
+- **No `npm install`, no `node_modules`.** Built on Deno and web standards (Fetch, Streams, ES
+  modules), plus pinned libraries from JSR and npm that Deno downloads by itself, such as Hono and
+  ArkType for the OAuth routes.
 - **One binary.** Deno compiles it into a single executable, or runs it straight from a pinned
   URL. Docker and systemd setups are in [self-hosting.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/self-hosting.md).
 - **Local or remote.** stdio for desktop clients, or Streamable HTTP with a bearer token or OAuth
@@ -93,7 +94,10 @@ URL such as `https://caldav-mcp.example.com`, usually a reverse proxy (Traefik, 
 terminates TLS in front of the container. Set `TRUSTED_PROXIES` to the proxy's network so the rate
 limit sees each client's own address.
 
-**2. Make the owner password hash.** Pick a pepper, a random secret of at least 32 characters, for
+**2. Make the owner password hash.** Use a long random owner password, for example 24 or more
+characters from a password manager. The server limits wrong passwords to 10 a minute per client
+address, but someone with many addresses can try more, so the length is what keeps it safe. Pick a
+pepper, a random secret of at least 32 characters, for
 example `openssl rand -base64 48`. Then hash your password with it. The command reads the password
 from standard input, so it stays out of your shell history:
 

@@ -38,7 +38,8 @@ logger has the token and the CalDAV password redacted.
 A client is its IP address: the connecting peer, or the first `X-Forwarded-For` hop when the peer
 is in `TRUSTED_PROXIES`. Each client may send 10 wrong tokens or refused consent forms per minute; after that every request
 from it gets `429` with `Retry-After` until the minute is over, before its token is even checked.
-Each client may also send 100 authorized requests per minute. A request body over 1 MiB gets `413`.
+Each client may also send 100 authorized requests per minute. A request body over 1 MiB gets `413`,
+and a batch of more than 20 messages is refused whole.
 
 ## OAuth
 
@@ -53,6 +54,10 @@ With OAuth on:
   describe the server; `/authorize` shows the consent page and `/token` hands out tokens.
 - A request to `/mcp` without a valid token gets `401` with
   `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_URL>/.well-known/oauth-protected-resource/mcp"`.
+- Only clients whose `client_id` is on `claude.ai` can sign in: the Claude apps and Claude Code.
+  A `client_id` on any other host gets `400` before anything is fetched.
+- Each client may open 10 consent pages a minute; the next one gets `429` until the minute is over.
+  Wrong owner passwords count toward the same 10 a minute as wrong tokens.
 - `MCP_BEARER_TOKEN` keeps working next to OAuth, so clients such as OpenWebUI need no change.
 - Tokens live in memory. A restart signs every connector out, and each one asks you to approve it
   again the next time it connects.
