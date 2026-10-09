@@ -228,3 +228,15 @@ Deno.test('right tokens do not count toward the wrong-token limit', async () => 
   await wrong.body?.cancel();
   assertEquals(wrong.status, 401);
 });
+
+Deno.test('40 parallel requests with the right token from one address get no 429', async () => {
+  const { handler } = setup();
+  const responses = await Promise.all(
+    Array.from({ length: 40 }, () => handler(post(PING, AUTH), peer('192.0.2.9'))),
+  );
+  const statuses = await Promise.all(responses.map(async (res) => {
+    await res.body?.cancel();
+    return res.status;
+  }));
+  assertEquals(statuses.filter((status) => status === 429).length, 0);
+});

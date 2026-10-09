@@ -180,9 +180,11 @@ export function createHttpHandler(
     const peer = addr && 'hostname' in addr ? addr.hostname : undefined;
     const client = clientIpBucket(clientIp(req, peer, 'x-forwarded-for', ipOptions));
 
+    // Reserve, verify and refund with no await between them, so parallel right-token requests
+    // never hold a reserved slot at the same time and cannot exhaust the wrong-token budget.
     const attempt = authFailures.check(client);
     if (!attempt.allowed) return tooManyRequests(attempt.retryAfterMs);
-    if (!(await isAuthorized(req, verifier))) {
+    if (!isAuthorized(req, verifier)) {
       // Never log what the client sent: a near-miss token is still a secret.
       log('debug', `Auth failed for ${req.method} ${url.pathname}`);
       return json({ error: 'Unauthorized' }, 401);
@@ -207,15 +209,9 @@ function tooManyRequests(retryAfterMs: number): Response {
 }
 
 /** Check the `Authorization` header, then `X-Api-Key`, through the constant-time verifier. */
-async function isAuthorized(
-  req: Request,
-  verifier: ReturnType<typeof createTokenVerifier>,
-): Promise<boolean> {
+function isAuthorized(req: Request, verifier: ReturnType<typeof createTokenVerifier>): boolean {
   const candidates = [bearerTokenFromHeaders(req.headers), req.headers.get('X-Api-Key')];
-  for (const candidate of candidates) {
-    if (candidate && await verifier.verify(candidate)) return true;
-  }
-  return false;
+  return candidates.some((candidate) => !!candidate && verifier.verifySync(candidate));
 }
 
 async function handleMcpPost(req: Request, mcp: McpHandler): Promise<Response> {
