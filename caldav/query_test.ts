@@ -357,6 +357,7 @@ Deno.test('task and event tools refuse a URL outside a listed calendar without s
   const { engine, fake } = setup();
   const targets = [
     url(TASKS),
+    url(`${TASKS}sub/`),
     url('/api/x'),
     url('/dav/principal/user%40example.com/'),
     url('/dav/cal/other%40example.com/tasks/theirs.ics'),
