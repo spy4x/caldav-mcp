@@ -371,3 +371,24 @@ Deno.test('task and event tools refuse a URL outside a listed calendar without s
   assertEquals(fake.requests.filter((r) => targets.includes(r.url)), []);
   assert(fake.calendars.has(TASKS));
 });
+
+Deno.test('completing an already completed task keeps its completion date', async () => {
+  const { engine, fake } = setup();
+  const result = unwrap(
+    await engine.updateTodo(url(DONE_PATH), DONE_ETAG, { status: TodoStatus.Completed }),
+  );
+  assertEquals(result.todo.status, 'COMPLETED');
+  assert(fake.objects.get(DONE_PATH)!.data.includes('\r\nCOMPLETED:20261001T080000Z\r\n'));
+});
+
+Deno.test('renaming and completing in one call raises SEQUENCE once', async () => {
+  const { engine, fake } = setup();
+  unwrap(
+    await engine.updateTodo(url(ZONED_PATH), ZONED_ETAG, {
+      summary: 'Call the bank today',
+      status: TodoStatus.Completed,
+    }),
+  );
+  const data = fake.objects.get(ZONED_PATH)!.data;
+  assert(data.includes('\r\nSEQUENCE:1\r\n'), data);
+});

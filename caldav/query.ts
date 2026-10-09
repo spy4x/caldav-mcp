@@ -12,7 +12,14 @@ import {
   type CalDavResult,
 } from '@spy4x/caldav';
 import { sameResource } from '@spy4x/caldav/url';
-import { type IcalComponent, type IcalResult, parseIcal, serializeIcal } from '@spy4x/time/ical';
+import {
+  getProperty,
+  type IcalComponent,
+  type IcalResult,
+  parseIcal,
+  serializeIcal,
+  setProperty,
+} from '@spy4x/time/ical';
 import {
   type Alarm,
   AlarmRelated,
@@ -217,6 +224,19 @@ function eventDetail(event: CalendarEvent, url: string, etag: string | null): Ev
     repeats: event.repeats ? true as const : undefined,
     reminders: reminders(event.alarms),
   });
+}
+
+/**
+ * Each library call (reopen, patch, complete) raises SEQUENCE by one, but one tool call is one
+ * change: cap the task's SEQUENCE at one above where it started.
+ */
+function oneSequenceStep(root: IcalComponent, before: number | undefined): void {
+  const once = (before !== undefined && before > 0 ? before : 0) + 1;
+  const master = root.components.find((c) =>
+    c.name === 'VTODO' && getProperty(c, 'RECURRENCE-ID') === undefined
+  );
+  const now = master && Number(getProperty(master, 'SEQUENCE')?.value);
+  if (master && now !== undefined && now > once) setProperty(master, 'SEQUENCE', String(once));
 }
 
 function isOpen(todo: Todo): boolean {
@@ -590,6 +610,7 @@ export class QueryEngine {
         if (!done.success) return fail('Refused', done.error.message);
         completion = done.output.kind === CompleteTodoKind.Advanced ? 'advanced' : 'completed';
       }
+      oneSequenceStep(root, current.sequence);
       return ok(true);
     });
     if (!edited.success) return edited;
