@@ -1,5 +1,5 @@
 # ── Multistage build: compile → distroless runtime ──
-FROM denoland/deno:alpine AS builder
+FROM denoland/deno:2.9.7-alpine AS builder
 
 WORKDIR /app
 COPY . .
