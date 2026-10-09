@@ -10,7 +10,7 @@ server without a client and the other clients.
 CALDAV_URL=https://cal.example.com \
 CALDAV_USERNAME=user \
 CALDAV_PASSWORD=pass \
-deno run -A https://raw.githubusercontent.com/spy4x/caldav-mcp/b249b6426f1a556ef4dada1292e3b5bf8d94d09a/main.ts
+deno run -A jsr:@spy4x/caldav-mcp@1
 ```
 
 ## OpenCode
@@ -52,5 +52,5 @@ Settings → Features → MCP → Add new MCP server:
 |-------|-------|
 | Name | `caldav-mcp` |
 | Type | `command` |
-| Command | `deno run -A https://raw.githubusercontent.com/spy4x/caldav-mcp/b249b6426f1a556ef4dada1292e3b5bf8d94d09a/main.ts` |
+| Command | `deno run -A jsr:@spy4x/caldav-mcp@1` |
 | Environment | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD` |

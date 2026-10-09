@@ -48,14 +48,14 @@ such as Radicale. **Skip it if** you need Google Calendar (its CalDAV API needs 
 ## Quick start
 
 Install [Deno](https://deno.com), then add this to Claude Desktop's `claude_desktop_config.json`.
-The URL is pinned to a commit, so the code you run does not change under you.
+`@1` accepts every 1.x release; pin an exact version such as `@1.0.0` if you want the code frozen.
 
 ```json
 {
   "mcpServers": {
     "caldav": {
       "command": "deno",
-      "args": ["run", "-A", "--no-lock", "https://raw.githubusercontent.com/spy4x/caldav-mcp/b249b6426f1a556ef4dada1292e3b5bf8d94d09a/main.ts"],
+      "args": ["run", "-A", "jsr:@spy4x/caldav-mcp@1"],
       "env": {
         "CALDAV_URL": "https://cal.example.com",
         "CALDAV_USERNAME": "user",
