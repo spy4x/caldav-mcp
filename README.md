@@ -7,9 +7,9 @@
 [![CI](https://ci.antonshubin.com/api/badges/6/status.svg)](https://ci.antonshubin.com/repos/6)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[Tools and examples](docs/features.md) · [MCP clients](docs/clients.md) ·
-[Self-hosting](docs/self-hosting.md) · [Configuration](docs/configuration.md) ·
-[How it works](docs/how-it-works.md) · [FAQ](docs/faq.md)
+[Tools and examples](https://github.com/spy4x/caldav-mcp/blob/main/docs/features.md) · [MCP clients](https://github.com/spy4x/caldav-mcp/blob/main/docs/clients.md) ·
+[Self-hosting](https://github.com/spy4x/caldav-mcp/blob/main/docs/self-hosting.md) · [Configuration](https://github.com/spy4x/caldav-mcp/blob/main/docs/configuration.md) ·
+[How it works](https://github.com/spy4x/caldav-mcp/blob/main/docs/how-it-works.md) · [FAQ](https://github.com/spy4x/caldav-mcp/blob/main/docs/faq.md)
 
 <img src="docs/screenshots/tool-exchange.png" alt="An example request, &quot;Book a 30-minute call with Jane Doe on Friday at 10:00 UTC, remind me to send her the agenda the day before, and show me what's still open&quot;, followed by four real tool calls and their responses: list_calendars returns the personal and work calendars, create_event adds &quot;Call with Jane Doe&quot; to work, create_todo adds &quot;Send the agenda to Jane&quot; with priority 1, and query_todos returns two open tasks, one of them overdue." width="820">
 
@@ -36,26 +36,26 @@ and pulled in a large npm install. I run it on my own homelab next to my calenda
 - **No third-party dependencies.** Built on Deno and web standards (Fetch, Streams, ES modules):
   no npm install, no `node_modules`.
 - **One binary.** Deno compiles it into a single executable, or runs it straight from a pinned
-  URL. Docker and systemd setups are in [self-hosting.md](docs/self-hosting.md).
+  URL. Docker and systemd setups are in [self-hosting.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/self-hosting.md).
 - **Local or remote.** stdio for desktop clients, or HTTP with a bearer token for OpenWebUI and
   other networked clients.
 
 **Use it if** your calendar lives on a CalDAV server you can reach with a username and password,
 such as Radicale. **Skip it if** you need Google Calendar (its CalDAV API needs OAuth), contacts
 (CardDAV) or several users from one instance. The comparison with `dav-mcp` is in
-[how-it-works.md](docs/how-it-works.md#comparison).
+[how-it-works.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/how-it-works.md#comparison).
 
 ## Quick start
 
 Install [Deno](https://deno.com), then add this to Claude Desktop's `claude_desktop_config.json`.
-The URL is pinned to a commit, so the code you run does not change under you.
+`@1` accepts every 1.x release; pin an exact version such as `@1.0.0` if you want the code frozen.
 
 ```json
 {
   "mcpServers": {
     "caldav": {
       "command": "deno",
-      "args": ["run", "-A", "--no-lock", "https://raw.githubusercontent.com/spy4x/caldav-mcp/b249b6426f1a556ef4dada1292e3b5bf8d94d09a/main.ts"],
+      "args": ["run", "-A", "jsr:@spy4x/caldav-mcp@1"],
       "env": {
         "CALDAV_URL": "https://cal.example.com",
         "CALDAV_USERNAME": "user",
@@ -67,7 +67,7 @@ The URL is pinned to a commit, so the code you run does not change under you.
 ```
 
 Restart Claude Desktop and ask "Which calendars do I have?". The answer comes from
-`list_calendars`. OpenCode, OpenWebUI and Cursor are in [clients.md](docs/clients.md).
+`list_calendars`. OpenCode, OpenWebUI and Cursor are in [clients.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/clients.md).
 
 ## Configuration
 
@@ -80,7 +80,7 @@ The ones you must set:
 | `CALDAV_PASSWORD` | `pass`                    |
 
 The HTTP port, the bearer token and the log level are optional: see
-[configuration.md](docs/configuration.md).
+[configuration.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/configuration.md).
 
 ## Development
 
@@ -91,7 +91,7 @@ deno task check && deno task test
 deno task compile   # single binary: ./caldav-mcp
 ```
 
-The code layout is in [how-it-works.md](docs/how-it-works.md#architecture).
+The code layout is in [how-it-works.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/how-it-works.md#architecture).
 
 ## Built by
 

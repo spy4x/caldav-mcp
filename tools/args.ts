@@ -5,7 +5,7 @@
 import { IcalDateKind, type IcalDateValue } from '@spy4x/time/ical';
 import {
   type AlarmInput,
-  AlarmRelated,
+  type AlarmRelated,
   AlarmTriggerKind,
   TodoStatus,
 } from '@spy4x/time/ical-tasks';

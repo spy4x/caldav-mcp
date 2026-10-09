@@ -5,7 +5,7 @@ Designed for homelab deployments. Compatible with Radicale, Baïkal, Xandikos, a
 ## Compile to binary (recommended)
 
 ```bash
-deno compile -A --output caldav-mcp https://raw.githubusercontent.com/spy4x/caldav-mcp/b249b6426f1a556ef4dada1292e3b5bf8d94d09a/main.ts
+deno compile -A --output caldav-mcp jsr:@spy4x/caldav-mcp@1
 ./caldav-mcp                 # stdio (for MCP clients)
 ./caldav-mcp --http          # HTTP on 127.0.0.1:3000; needs MCP_BEARER_TOKEN, set HOST to listen elsewhere
 ```
@@ -15,7 +15,7 @@ deno compile -A --output caldav-mcp https://raw.githubusercontent.com/spy4x/cald
 ```yaml
 services:
   caldav-mcp:
-    build: https://github.com/spy4x/caldav-mcp.git#b249b6426f1a556ef4dada1292e3b5bf8d94d09a
+    build: https://github.com/spy4x/caldav-mcp.git#v1.0.0
     container_name: caldav-mcp
     restart: unless-stopped
     environment:
@@ -42,7 +42,7 @@ docker pull ghcr.io/spy4x/caldav-mcp:latest
 ```bash
 # Install binary
 sudo deno compile -A --output /usr/local/bin/caldav-mcp \
-  https://raw.githubusercontent.com/spy4x/caldav-mcp/b249b6426f1a556ef4dada1292e3b5bf8d94d09a/main.ts
+  jsr:@spy4x/caldav-mcp@1
 
 # Systemd service
 cat > /etc/systemd/system/caldav-mcp.service << 'EOF'

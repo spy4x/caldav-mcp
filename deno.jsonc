@@ -1,5 +1,12 @@
 {
-  "version": "0.1.0",
+  "name": "@spy4x/caldav-mcp",
+  "version": "1.0.0",
+  "license": "MIT",
+  "exports": "./main.ts",
+  "publish": {
+    "include": ["main.ts", "env.ts", "mcp.ts", "caldav/**/*.ts", "tools/**/*.ts", "LICENSE", "README.md"],
+    "exclude": ["**/*_test.ts", "caldav/testing"]
+  },
   "description": "Lightweight CalDAV MCP server — events + todos for AI agents",
   // Our own @spy4x/* releases resolve at once; everything else waits a day (supply-chain guard).
   "minimumDependencyAge": { "age": "1440", "exclude": ["jsr:@spy4x/*"] },
