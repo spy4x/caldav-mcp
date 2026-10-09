@@ -2,7 +2,7 @@
 
 import { CONSENT_PAGE_LIMIT, createHttpHandler } from './main.ts';
 import { McpHandler } from './mcp.ts';
-import { createOAuth, type OpenedOAuthStore, openOAuthStore } from './oauth.ts';
+import { type OAuthConfig, openOAuth } from './oauth.ts';
 import { registerAllTools } from './tools/index.ts';
 import { setup as caldavSetup } from './caldav/testing/fixtures.ts';
 import { assert, assertEquals, assertMatch, assertRejects } from 'std/assert/mod.ts';
@@ -55,22 +55,25 @@ function fakeNetwork(): { fetcher: Fetcher; resolver: DnsResolver; calls: string
 const OWNER_HASH = await createPasswordHasher({ pepper: PEPPER, iterations: 100_000 })
   .hash(OWNER_PASSWORD);
 
+function config(kvPath: string): OAuthConfig {
+  return { publicUrl: ORIGIN, ownerPasswordHash: OWNER_HASH, authPepper: PEPPER, kvPath };
+}
+
 /**
  * A handler with OAuth and the static token on, the real tools and the fake CalDAV server. The
  * OAuth store is an in-memory Deno KV unless `kvPath` names a file. Dispose of it to close the KV.
  */
 async function setup(kvPath = ':memory:') {
   const network = fakeNetwork();
-  const opened: OpenedOAuthStore = await openOAuthStore(kvPath);
-  const oauth = createOAuth(
-    { publicUrl: ORIGIN, ownerPasswordHash: OWNER_HASH, authPepper: PEPPER, kvPath },
-    { store: opened.store, fetcher: network.fetcher, resolver: network.resolver },
-  );
+  const { oauth, close } = await openOAuth(config(kvPath), {
+    fetcher: network.fetcher,
+    resolver: network.resolver,
+  });
   const mcp = new McpHandler({ name: 'test', version: '0.0.0' });
   registerAllTools(mcp, caldavSetup().engine);
   const logs: string[] = [];
   const handler = createHttpHandler(mcp, STATIC_TOKEN, (_level, msg) => logs.push(msg), { oauth });
-  return { handler, logs, calls: network.calls, [Symbol.dispose]: opened.close };
+  return { handler, logs, calls: network.calls, [Symbol.dispose]: close };
 }
 
 type Handler = Awaited<ReturnType<typeof setup>>['handler'];
@@ -384,7 +387,7 @@ Deno.test('an OAuth store path that cannot be opened stops startup, naming the p
   const dir = await Deno.makeTempDir();
   try {
     const path = `${dir}/missing-directory/oauth.kv`;
-    await assertRejects(() => openOAuthStore(path), Error, `${path} (OAUTH_KV_PATH)`);
+    await assertRejects(() => openOAuth(config(path)), Error, `${path} (OAUTH_KV_PATH)`);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }

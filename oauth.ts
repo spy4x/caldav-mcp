@@ -43,10 +43,8 @@ export interface OAuthConfig {
  */
 export const TRUSTED_CLIENT_HOSTS: readonly string[] = ['claude.ai'];
 
-/** The store, and seams for tests. Production passes only the store. */
+/** Seams for tests. Production passes none. */
 export interface OAuthOptions {
-  /** Where grants, codes, tokens and pending consents live; see {@link openOAuthStore}. */
-  store: OAuthStore;
   /** Network seam for fetching client metadata documents. Defaults to the platform `fetch`. */
   fetcher?: Fetcher;
   /** DNS seam for the same fetch. Defaults to the system resolver. */
@@ -67,28 +65,38 @@ export interface OAuth {
   authenticate(req: Request): Promise<Response | undefined>;
 }
 
-/** An open OAuth store and the way to close the database under it. */
-export interface OpenedOAuthStore {
-  store: OAuthStore;
+/** The OAuth server for one owner, and the way to close the database its tokens live in. */
+export interface OpenedOAuth {
+  oauth: OAuth;
   close(): void;
 }
 
 /**
- * Open the Deno KV database at `path` as the OAuth store, so a restart keeps connectors signed in.
- * Needs `--unstable-kv`. Deno KV creates the file but not its directory.
+ * Open the Deno KV database at `config.kvPath` as the token store, so a restart keeps connectors
+ * signed in, and build the OAuth server on it. Needs `--unstable-kv`. Deno KV creates the file but
+ * not its directory.
  *
  * @throws {Error} Naming the path when the database cannot be opened, so the server never starts
  * with OAuth on and nowhere to keep its tokens.
+ * @throws {TypeError} When the URL, the pepper or anything the library checks is invalid.
  */
-export async function openOAuthStore(path: string): Promise<OpenedOAuthStore> {
+export async function openOAuth(
+  config: OAuthConfig,
+  options: OAuthOptions = {},
+): Promise<OpenedOAuth> {
   let kv: Deno.Kv;
   try {
-    kv = await Deno.openKv(path);
+    kv = await Deno.openKv(config.kvPath);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(`Cannot open the OAuth store at ${path} (OAUTH_KV_PATH): ${reason}`);
+    throw new Error(`Cannot open the OAuth store at ${config.kvPath} (OAUTH_KV_PATH): ${reason}`);
   }
-  return { store: new KvOAuthStore(kv), close: () => kv.close() };
+  try {
+    return { oauth: createOAuth(config, new KvOAuthStore(kv), options), close: () => kv.close() };
+  } catch (err) {
+    kv.close();
+    throw err;
+  }
 }
 
 /**
@@ -101,7 +109,7 @@ export async function openOAuthStore(path: string): Promise<OpenedOAuthStore> {
  *
  * @throws {TypeError} When the URL, the pepper or anything the library checks is invalid.
  */
-export function createOAuth(config: OAuthConfig, options: OAuthOptions): OAuth {
+function createOAuth(config: OAuthConfig, store: OAuthStore, options: OAuthOptions): OAuth {
   const hasher = createPasswordHasher({ pepper: config.authPepper });
   const issuer = config.publicUrl;
   const resource = issuer + MCP_PATH;
@@ -109,7 +117,7 @@ export function createOAuth(config: OAuthConfig, options: OAuthOptions): OAuth {
   const authorization = createAuthorizationServer({
     issuer,
     resources: [resource],
-    store: options.store,
+    store,
     clients: createClientMetadataFetcher({
       trustedHosts: TRUSTED_CLIENT_HOSTS,
       fetcher: options.fetcher,

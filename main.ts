@@ -5,7 +5,7 @@ import { type Env, loadEnv } from './env.ts';
 import { createCalDavClient } from '@spy4x/caldav';
 import { QueryEngine } from './caldav/query.ts';
 import { type JsonRpcResponse, McpHandler, SUPPORTED_PROTOCOL_VERSIONS } from './mcp.ts';
-import { createOAuth, MCP_PATH, type OAuth, openOAuthStore } from './oauth.ts';
+import { MCP_PATH, type OAuth, openOAuth } from './oauth.ts';
 import { AUTHORIZE_PATH } from '@spy4x/server/mcp-oauth';
 import { registerAllTools } from './tools/index.ts';
 import {
@@ -147,9 +147,7 @@ export function httpListenOptions(
 async function startHttp(mcp: McpHandler, env: Env, log: Log): Promise<void> {
   const { hostname, port, token } = httpListenOptions(env);
   // Opened for the life of the process; a database that cannot be opened stops the start.
-  const oauth = env.oauth
-    ? createOAuth(env.oauth, { store: (await openOAuthStore(env.oauth.kvPath)).store })
-    : undefined;
+  const oauth = env.oauth ? (await openOAuth(env.oauth)).oauth : undefined;
   log('info', `Starting HTTP transport on ${hostname}:${port}...`);
   if (oauth) log('info', `OAuth on for ${oauth.resource}; tokens kept in ${env.oauth?.kvPath}`);
   Deno.serve(
