@@ -1,7 +1,7 @@
 # Self-hosting
 
-Designed for homelab deployments. Tested with Stalwart and Radicale; other CalDAV servers that accept
-a username and password, such as Baïkal and Xandikos, should work but are not tested yet.
+Designed for homelab deployments. Tested with Stalwart and Radicale. caldav-mcp signs in with HTTP
+Basic auth only, so a server set to Digest auth, such as Baïkal by default, needs Basic turned on.
 
 ## Compile to binary (recommended)
 

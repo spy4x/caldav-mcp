@@ -46,12 +46,12 @@ and pulled in a large npm install. I run it on my own homelab next to my calenda
   for claude.ai, the Claude phone app, OpenWebUI and other networked clients.
 
 **Use it if** your calendar lives on a CalDAV server you can reach with a username and password.
-I run it every day against Stalwart, and the exchange in the picture ran against Radicale. Other
-servers that accept a username and password over CalDAV, such as Baïkal, Xandikos, Nextcloud or
-Fastmail, should work but are not tested yet; please open an issue if one does not. **Skip it if** you need Google
-Calendar (Google offers CalDAV only behind OAuth 2.0, which caldav-mcp does not speak), contacts
-(CardDAV) or several users from one instance. The comparison with `dav-mcp` is in
-[how-it-works.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/how-it-works.md#comparison).
+I run it every day against Stalwart, and the exchange in the picture ran against Radicale. It
+signs in with HTTP Basic auth only, so a server set to Digest auth, such as Baïkal by default,
+needs Basic turned on. Other servers are not tested yet; please open an issue if one does not
+work. **Skip it if** you need Google Calendar (Google offers CalDAV only behind OAuth 2.0, which
+caldav-mcp does not speak), contacts (CardDAV) or several users from one instance. The comparison
+with `dav-mcp` is in [how-it-works.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/how-it-works.md#comparison).
 
 ## Quick start
 
@@ -89,56 +89,6 @@ server and nothing else, and `--allow-env` lets it read only the settings in
 [configuration.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/configuration.md). It
 reads and writes no files and starts no programs. If your server sends clients on to another host,
 add that host to `--allow-net` too, separated by a comma.
-
-## An example conversation
-
-caldav-mcp is a server with no screen of its own, so instead of screenshots here is what an
-assistant does with it. This is an example, not a real person's chat: the request and the
-assistant's lines are written for illustration. The tool calls are real. They were sent to
-caldav-mcp 1.5.0 over stdio, and each response is what it returned from the in-memory CalDAV server
-its tests use. URLs and ids are shortened.
-
-> **You:** Book a 30-minute call with Jane Doe on Friday at 10:00 UTC, and remind me to send her
-> the agenda the day before.
-
-```jsonc
-// list_calendars {}
-[
-  { "url": ".../personal/", "displayName": "Personal", "components": ["VEVENT", "VTODO"] },
-  { "url": ".../work/", "displayName": "Work", "components": ["VEVENT", "VTODO"] }
-]
-
-// create_event { "calendarUrl": ".../work/", "summary": "Call with Jane Doe",
-//   "start": "2026-10-23T10:00:00Z", "end": "2026-10-23T10:30:00Z" }
-{ "url": ".../work/b350cd2e….ics", "etag": "\"1000\"", "uid": "01a15088-fad1-…" }
-
-// create_todo { "calendarUrl": ".../personal/", "summary": "Send the agenda to Jane",
-//   "due": "2026-10-22", "priority": 1 }
-{ "url": ".../personal/55a92785….ics", "etag": "\"1001\"", "uid": "01a15088-fad5-…" }
-
-// query_todos {}
-{
-  "total": 1,
-  "byStatus": { "NONE": 1 },
-  "byPriority": { "high": 1, "medium": 0, "low": 0, "none": 0 },
-  "overdue": 0,
-  "truncated": false,
-  "todos": [
-    {
-      "url": ".../personal/55a92785….ics",
-      "etag": "\"1001\"",
-      "summary": "Send the agenda to Jane",
-      "due": "2026-10-22",
-      "priority": 1,
-      "calendar": "Personal"
-    }
-  ]
-}
-```
-
-> **Assistant:** Done. "Call with Jane Doe" is in your Work calendar on Friday 23 October,
-> 10:00–10:30 UTC, and "Send the agenda to Jane" is a high-priority task in Personal, due Thursday
-> 22 October. It is your only open task.
 
 ## Configuration
 

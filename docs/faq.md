@@ -1,14 +1,14 @@
 # FAQ
 
 **Q: Does it work with Google Calendar?**
-A: Not yet. Google Calendar does offer a CalDAV API, but only behind OAuth 2.0, and caldav-mcp signs
+A: No. Google Calendar does offer a CalDAV API, but only behind OAuth 2.0, and caldav-mcp signs
 in with a username and password (HTTP Basic auth) only.
 
 **Q: Which CalDAV servers does it work with?**
-A: I run it every day against Stalwart, and the README's example ran against Radicale. Any server
-that accepts a username and password over CalDAV should work, such as Baïkal, Xandikos, Nextcloud,
-or Fastmail, but those are not tested yet. If one fails, open
-an issue with the server's name and version.
+A: I run it every day against Stalwart, and the README's picture shows an exchange with Radicale.
+It signs in with HTTP Basic auth only, so a server set to Digest auth, such as Baïkal by default,
+needs Basic turned on. Other servers are not tested yet. If one fails, open an issue with the
+server's name and version.
 
 **Q: Why not `deno run -A`?**
 A: `-A` grants every permission. caldav-mcp needs only network access to your CalDAV server and read
