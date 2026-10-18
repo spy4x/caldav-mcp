@@ -5,6 +5,7 @@
 **Let your AI assistant read and manage your calendar and tasks on your own CalDAV server.**
 
 [![CI](https://ci.antonshubin.com/api/badges/6/status.svg)](https://ci.antonshubin.com/repos/6)
+[![MCP protocol](https://img.shields.io/badge/MCP-2025--06--18-blue)](https://modelcontextprotocol.io/specification/2025-06-18)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 [Tools and examples](https://github.com/spy4x/caldav-mcp/blob/main/docs/features.md) · [MCP clients](https://github.com/spy4x/caldav-mcp/blob/main/docs/clients.md) ·
@@ -33,30 +34,41 @@ and pulled in a large npm install. I run it on my own homelab next to my calenda
   overdue?" is one request, not one per calendar.
 - **Answers an assistant can use.** Queries return totals, counts by status and priority and the
   number of overdue tasks next to the list, capped at 200 items with a `truncated` flag.
-- **No `npm install`, no `node_modules`.** Built on Deno and web standards (Fetch, Streams, ES
-  modules), plus pinned libraries from JSR and npm that Deno downloads by itself, such as Hono and
-  ArkType for the OAuth routes.
-- **One binary.** Deno compiles it into a single executable, or runs it straight from a pinned
-  URL. Docker and systemd setups are in [self-hosting.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/self-hosting.md).
+- **Built on web standards.** Modern TypeScript on Fetch, Web Crypto, Streams and ES modules,
+  plus pinned libraries from JSR and npm, such as Hono and ArkType for the OAuth routes. No `npm
+  install` and no `node_modules`: it runs on Deno 2, which downloads them by itself.
+- **Runs where you want it.** Straight from a pinned JSR release, as one compiled binary, or as the
+  Docker image `antonshubin/caldav-mcp`. Docker and systemd setups are in
+  [self-hosting.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/self-hosting.md).
+- **Narrow permissions.** It needs network access to your CalDAV server and to read its own
+  settings, nothing else: no files and no subprocesses. OAuth adds access to its own token store.
 - **Local or remote.** stdio for desktop clients, or Streamable HTTP with a bearer token or OAuth
   for claude.ai, the Claude phone app, OpenWebUI and other networked clients.
 
-**Use it if** your calendar lives on a CalDAV server you can reach with a username and password,
-such as Radicale. **Skip it if** you need Google Calendar (its CalDAV API needs OAuth), contacts
+**Use it if** your calendar lives on a CalDAV server you can reach with a username and password.
+I run it every day against Stalwart, and the exchange in the picture ran against Radicale. Other
+servers that accept a username and password over CalDAV, such as Baïkal, Xandikos, Nextcloud or
+Fastmail, should work but are not tested yet; please open an issue if one does not. **Skip it if** you need Google
+Calendar (Google offers CalDAV only behind OAuth 2.0, which caldav-mcp does not speak), contacts
 (CardDAV) or several users from one instance. The comparison with `dav-mcp` is in
 [how-it-works.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/how-it-works.md#comparison).
 
 ## Quick start
 
 Install [Deno](https://deno.com), then add this to Claude Desktop's `claude_desktop_config.json`.
-`@1` accepts every 1.x release; pin an exact version such as `@1.0.0` if you want the code frozen.
+Replace `cal.example.com` in `--allow-net` with the host of your `CALDAV_URL`.
 
 ```json
 {
   "mcpServers": {
     "caldav": {
       "command": "deno",
-      "args": ["run", "-A", "jsr:@spy4x/caldav-mcp@1"],
+      "args": [
+        "run",
+        "--allow-net=cal.example.com",
+        "--allow-env=CALDAV_URL,CALDAV_SERVER_URL,CALDAV_USERNAME,CALDAV_PASSWORD,CALDAV_MCP_TOOLS,CALDAV_MCP_TIME_ZONE,HOST,PORT,LOG_LEVEL,MCP_BEARER_TOKEN,ALLOW_BEARER_TOKEN_WITH_OAUTH,TRUSTED_PROXIES,PUBLIC_URL,OWNER_PASSWORD_HASH,AUTH_PEPPER,OAUTH_KV_PATH",
+        "jsr:@spy4x/caldav-mcp@1.6.0"
+      ],
       "env": {
         "CALDAV_URL": "https://cal.example.com",
         "CALDAV_USERNAME": "user",
@@ -68,7 +80,65 @@ Install [Deno](https://deno.com), then add this to Claude Desktop's `claude_desk
 ```
 
 Restart Claude Desktop and ask "Which calendars do I have?". The answer comes from
-`list_calendars`. OpenCode, OpenWebUI and Cursor are in [clients.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/clients.md).
+`list_calendars`. OpenCode, OpenWebUI and Cursor are in
+[clients.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/clients.md).
+
+The version is pinned, so the code you run never changes under you; move to a newer release by
+changing `@1.6.0`. The two permissions are all it needs: `--allow-net` lets it reach your CalDAV
+server and nothing else, and `--allow-env` lets it read only the settings in
+[configuration.md](https://github.com/spy4x/caldav-mcp/blob/main/docs/configuration.md). It
+reads and writes no files and starts no programs. If your server sends clients on to another host,
+add that host to `--allow-net` too, separated by a comma.
+
+## An example conversation
+
+caldav-mcp is a server with no screen of its own, so instead of screenshots here is what an
+assistant does with it. This is an example, not a real person's chat: the request and the
+assistant's lines are written for illustration. The tool calls are real. They were sent to
+caldav-mcp 1.5.0 over stdio, and each response is what it returned from the in-memory CalDAV server
+its tests use. URLs and ids are shortened.
+
+> **You:** Book a 30-minute call with Jane Doe on Friday at 10:00 UTC, and remind me to send her
+> the agenda the day before.
+
+```jsonc
+// list_calendars {}
+[
+  { "url": ".../personal/", "displayName": "Personal", "components": ["VEVENT", "VTODO"] },
+  { "url": ".../work/", "displayName": "Work", "components": ["VEVENT", "VTODO"] }
+]
+
+// create_event { "calendarUrl": ".../work/", "summary": "Call with Jane Doe",
+//   "start": "2026-10-23T10:00:00Z", "end": "2026-10-23T10:30:00Z" }
+{ "url": ".../work/b350cd2e….ics", "etag": "\"1000\"", "uid": "01a15088-fad1-…" }
+
+// create_todo { "calendarUrl": ".../personal/", "summary": "Send the agenda to Jane",
+//   "due": "2026-10-22", "priority": 1 }
+{ "url": ".../personal/55a92785….ics", "etag": "\"1001\"", "uid": "01a15088-fad5-…" }
+
+// query_todos {}
+{
+  "total": 1,
+  "byStatus": { "NONE": 1 },
+  "byPriority": { "high": 1, "medium": 0, "low": 0, "none": 0 },
+  "overdue": 0,
+  "truncated": false,
+  "todos": [
+    {
+      "url": ".../personal/55a92785….ics",
+      "etag": "\"1001\"",
+      "summary": "Send the agenda to Jane",
+      "due": "2026-10-22",
+      "priority": 1,
+      "calendar": "Personal"
+    }
+  ]
+}
+```
+
+> **Assistant:** Done. "Call with Jane Doe" is in your Work calendar on Friday 23 October,
+> 10:00–10:30 UTC, and "Send the agenda to Jane" is a high-priority task in Personal, due Thursday
+> 22 October. It is your only open task.
 
 ## Configuration
 
