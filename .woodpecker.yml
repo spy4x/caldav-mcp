@@ -1,6 +1,6 @@
 steps:
   check:
-    image: denoland/deno:2.9.7
+    image: denoland/deno:2.9.7@sha256:fa335acdf6b72106eda2cb6a8cb5f4187e7630e357467489db4b2e7352d5e432
     commands:
       # --frozen: fail when deno.lock and deno.jsonc disagree, instead of resolving afresh. The
       # test run needs its own flag: the tests import modules that `deno install` does not reach.
@@ -15,7 +15,7 @@ steps:
   # on a branch that predates this step, or one that removes it, still publishes. A tag build's
   # clone is full but has no `main` ref, which is why the step fetches it.
   on-main:
-    image: alpine/git:2.47.2
+    image: alpine/git:2.47.2@sha256:062a01ad7a0eb17cff382bc5e26086b4d710e56dfdfdf001109a49b6d9bd378c
     when:
       event: tag
       ref: refs/tags/v*
@@ -26,7 +26,7 @@ steps:
   # Publishes to JSR (`jsr:@spy4x/caldav-mcp`) on a `v*` tag, after `check` passed. The tag must
   # match `version` in deno.jsonc. `$$` stops Woodpecker substituting the variable itself.
   publish:
-    image: denoland/deno:2.9.7
+    image: denoland/deno:2.9.7@sha256:fa335acdf6b72106eda2cb6a8cb5f4187e7630e357467489db4b2e7352d5e432
     when:
       event: tag
       ref: refs/tags/v*
