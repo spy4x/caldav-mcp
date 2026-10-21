@@ -9,7 +9,7 @@
  * opening screen without the pointer). It also writes `media/demo/captions.vtt`, timing each
  * caption by the step of the replay it describes.
  *
- *   deno run -A --config media/demo/recipe/deno.json media/demo/recipe/record.ts <take dir>
+ *   deno run -A --config media/demo/recipe/deno.jsonc media/demo/recipe/record.ts <take dir>
  */
 import { chromium } from 'playwright'
 import { CARD_SECONDS } from './encode.ts'

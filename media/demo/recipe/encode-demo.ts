@@ -3,7 +3,7 @@
  * `captions.vtt`, the music from `music.opus`, then `demo.webm`, `demo.mp4` and the posters.
  * Runs alone after a caption or music change; no new recording needed.
  *
- *   deno run -A --config media/demo/recipe/deno.json media/demo/recipe/encode-demo.ts [take dir]
+ *   deno run -A --config media/demo/recipe/deno.jsonc media/demo/recipe/encode-demo.ts [take dir]
  */
 import { encodeDemo } from './encode.ts'
 
