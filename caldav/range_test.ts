@@ -52,3 +52,13 @@ Deno.test('an event whose start or end cannot be resolved is kept', () => {
   assertEquals(inOctober(['DTSTART:20261001T090000Z', 'DTEND:not-a-date']), true)
   assertEquals(inOctober(['DTSTART:20261001T090000Z', 'RRULE:FREQ=SOMETIMES']), true)
 })
+
+Deno.test('a repeating instance that starts before the range and runs into it is in', () => {
+  const monthly = ['DTSTART:20260809T230000Z', 'DTEND:20260810T010000Z', 'RRULE:FREQ=MONTHLY']
+  assertEquals(inOctober(monthly), true)
+  assertEquals(inOctober([...monthly.slice(0, 2), 'RRULE:FREQ=MONTHLY;COUNT=2']), false)
+})
+
+Deno.test('an event repeating by RDATE is kept, since RDATE dates are not read', () => {
+  assertEquals(inOctober(['DTSTART:20260901T090000Z', 'RDATE:20261012T090000Z']), true)
+})
