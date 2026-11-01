@@ -30,6 +30,12 @@ Deno.test('an event with DURATION lasts that long', () => {
   assertEquals(inOctober(['DTSTART:20261009T230000Z', 'DURATION:PT2H']), true)
 })
 
+Deno.test('a DURATION in any case is read, and an unreadable or negative one keeps the event', () => {
+  assertEquals(inOctober(['DTSTART:20261009T230000Z', 'DURATION:pt1h']), false)
+  assertEquals(inOctober(['DTSTART:20261001T090000Z', 'DURATION:soon']), true)
+  assertEquals(inOctober(['DTSTART:20261001T090000Z', 'DURATION:-PT1H']), true)
+})
+
 Deno.test('a zero-length event at the range start is in, one at its end is out', () => {
   assertEquals(inOctober(['DTSTART:20261010T000000Z']), true)
   assertEquals(inOctober(['DTSTART:20261020T000000Z']), false)

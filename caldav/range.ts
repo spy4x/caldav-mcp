@@ -12,10 +12,10 @@ import {
   readDate,
   resolveInstant,
 } from '@spy4x/time/ical'
+import { durationMs, readDuration } from '@spy4x/time/ical-duration'
 import { nextOccurrence, parseRrule } from '@spy4x/time/rrule'
 
 const DAY_MS = 86_400_000
-const DURATION = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
 
 /** A range of instants; a missing side is open. The end is exclusive. */
 export interface TimeRange {
@@ -23,12 +23,10 @@ export interface TimeRange {
   end?: Date
 }
 
-/** Milliseconds of a non-negative RFC 5545 DURATION, or `undefined` for anything else. */
-function durationMs(text: string): number | undefined {
-  const match = DURATION.exec(text.trim())
-  if (!match || !/\d/.test(text)) return undefined
-  const n = (group: number) => Number(match[group] ?? 0)
-  return ((n(1) * 7 + n(2)) * 86_400 + n(3) * 3_600 + n(4) * 60 + n(5)) * 1000
+/** Milliseconds of a non-negative DURATION, or `undefined` when it cannot be read. */
+function lengthMs(text: string): number | undefined {
+  const duration = readDuration(text)
+  return duration && !duration.negative ? durationMs(duration) : undefined
 }
 
 /** When one instance starts and how long it lasts; `ms` is unknown when its end cannot be read. */
@@ -50,7 +48,7 @@ function spanOf(event: IcalComponent, zone: string): Span | undefined {
     return { value, start, ms: end && end.getTime() - start.getTime() }
   }
   const duration = getProperty(event, 'DURATION')
-  if (duration) return { value, start, ms: durationMs(duration.value) }
+  if (duration) return { value, start, ms: lengthMs(duration.value) }
   // RFC 5545 §3.6.1: no end means one day for a date, the moment itself for a time.
   return { value, start, ms: value.kind === IcalDateKind.Date ? DAY_MS : 0 }
 }
