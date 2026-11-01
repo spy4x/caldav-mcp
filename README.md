@@ -31,6 +31,10 @@ and pulled in a large npm install. I run it on my own homelab next to my calenda
   (VEVENT) and tasks (VTODO), with ETags so two edits never overwrite each other silently.
 - **One call searches every calendar.** The calendar is optional on every query, so "what is
   overdue?" is one request, not one per calendar.
+- **Calendar subscriptions, read-only.** Subscribed iCalendar feeds (holidays, sports, a
+  colleague's calendar) are listed and their events searched like any other calendar. They are
+  read through your server's `?export`, which sabre/dav servers such as Nextcloud offer, and every
+  write to one is refused.
 - **Answers an assistant can use.** Queries return totals, counts by status and priority and the
   number of overdue tasks next to the list, capped at 200 items with a `truncated` flag.
 - **Built on web standards.** Modern TypeScript on Fetch, Web Crypto, Streams and ES modules,
