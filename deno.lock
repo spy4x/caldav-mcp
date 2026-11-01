@@ -7,16 +7,16 @@
     "jsr:@iuioiua/redis@1.1.10": "1.1.10",
     "jsr:@libs/qrcode@3.1.0": "3.1.0",
     "jsr:@simplewebauthn/server@14.0.3": "14.0.3",
-    "jsr:@spy4x/caldav@1.102.0": "1.102.0",
-    "jsr:@spy4x/email@^1.102.0": "1.102.0",
-    "jsr:@spy4x/net@1.102.0": "1.102.0",
-    "jsr:@spy4x/net@^1.102.0": "1.102.0",
-    "jsr:@spy4x/platform@1.102.0": "1.102.0",
-    "jsr:@spy4x/platform@^1.102.0": "1.102.0",
-    "jsr:@spy4x/server@1.102.0": "1.102.0",
-    "jsr:@spy4x/time@1.102.0": "1.102.0",
-    "jsr:@spy4x/time@^1.102.0": "1.102.0",
-    "jsr:@spy4x/validation@^1.102.0": "1.102.0",
+    "jsr:@spy4x/caldav@1.103.0": "1.103.0",
+    "jsr:@spy4x/email@^1.103.0": "1.103.0",
+    "jsr:@spy4x/net@1.103.0": "1.103.0",
+    "jsr:@spy4x/net@^1.103.0": "1.103.0",
+    "jsr:@spy4x/platform@1.103.0": "1.103.0",
+    "jsr:@spy4x/platform@^1.103.0": "1.103.0",
+    "jsr:@spy4x/server@1.103.0": "1.103.0",
+    "jsr:@spy4x/time@1.103.0": "1.103.0",
+    "jsr:@spy4x/time@^1.103.0": "1.103.0",
+    "jsr:@spy4x/validation@^1.103.0": "1.103.0",
     "jsr:@std/crypto@1.1.0": "1.1.0",
     "jsr:@std/encoding@1.0.11": "1.0.11",
     "jsr:@std/internal@^1.0.14": "1.0.14",
@@ -80,31 +80,31 @@
         "npm:reflect-metadata"
       ]
     },
-    "@spy4x/caldav@1.102.0": {
-      "integrity": "8e45f8e1fd2f7c516761ce5e271a09cd2353893c85ea07000f2757c2d49eae83",
+    "@spy4x/caldav@1.103.0": {
+      "integrity": "957bd6fcdc0103384768ecf986275accd951d5ea59c936d38e94686b89c4c436",
       "dependencies": [
-        "jsr:@spy4x/net@^1.102.0",
-        "jsr:@spy4x/platform@^1.102.0",
-        "jsr:@spy4x/time@^1.102.0",
+        "jsr:@spy4x/net@^1.103.0",
+        "jsr:@spy4x/platform@^1.103.0",
+        "jsr:@spy4x/time@^1.103.0",
         "jsr:@std/encoding"
       ]
     },
-    "@spy4x/email@1.102.0": {
-      "integrity": "407617767aa1a91ba981def7efaf918f661ac3c77f149d1b171e7424353bae62",
+    "@spy4x/email@1.103.0": {
+      "integrity": "30ca9477f9e766e2378fb1127ebecce420bd76ba7fdf6a1b381fdba9a98fca8e",
       "dependencies": [
-        "jsr:@spy4x/time@^1.102.0"
+        "jsr:@spy4x/time@^1.103.0"
       ]
     },
-    "@spy4x/net@1.102.0": {
-      "integrity": "5341807045c3b0af7d65b4c219b7038ce7b06e3ccf075f2edb7d226e00ef7c35"
+    "@spy4x/net@1.103.0": {
+      "integrity": "8ac24be6210f7a50696f4a741d61c1571506b692656833436366cf3e90551521"
     },
-    "@spy4x/platform@1.102.0": {
-      "integrity": "5cf8c60050f671a1327311fb9ebc96318a5de9417e1035e19639dedb2ae4af80",
+    "@spy4x/platform@1.103.0": {
+      "integrity": "625e7977025396b80e8ea273c8f013240c2c6ec148c9fcdb88d1aa2941398a4b",
       "dependencies": [
         "jsr:@hono/hono",
         "jsr:@spy4x/email",
-        "jsr:@spy4x/net@^1.102.0",
-        "jsr:@spy4x/time@^1.102.0",
+        "jsr:@spy4x/net@^1.103.0",
+        "jsr:@spy4x/time@^1.103.0",
         "jsr:@spy4x/validation",
         "jsr:@std/crypto",
         "jsr:@std/encoding",
@@ -115,8 +115,8 @@
         "npm:marked"
       ]
     },
-    "@spy4x/server@1.102.0": {
-      "integrity": "9fa2c142d99ba216d573f72920a964bf79be38beac4401d05fab915b93b29985",
+    "@spy4x/server@1.103.0": {
+      "integrity": "5f6916438014f3afc76b3ca54d082ea2d12c1bf4f70bcb8aff4f9699ca2b2da8",
       "dependencies": [
         "jsr:@age/age-encryption",
         "jsr:@hectorm/otpauth",
@@ -125,9 +125,9 @@
         "jsr:@libs/qrcode",
         "jsr:@simplewebauthn/server",
         "jsr:@spy4x/email",
-        "jsr:@spy4x/net@^1.102.0",
-        "jsr:@spy4x/platform@^1.102.0",
-        "jsr:@spy4x/time@^1.102.0",
+        "jsr:@spy4x/net@^1.103.0",
+        "jsr:@spy4x/platform@^1.103.0",
+        "jsr:@spy4x/time@^1.103.0",
         "jsr:@spy4x/validation",
         "jsr:@std/crypto",
         "jsr:@std/encoding",
@@ -136,11 +136,11 @@
         "npm:postgres"
       ]
     },
-    "@spy4x/time@1.102.0": {
-      "integrity": "0e77a18ad19e249a06b03094a2b4e13e9323c8c36070b3c55c4e8450a06cf782"
+    "@spy4x/time@1.103.0": {
+      "integrity": "6ef50ce704f66767a495cff95efaf3ec64c88f2733c53693e0d2dc1e91f78525"
     },
-    "@spy4x/validation@1.102.0": {
-      "integrity": "498829ba646f8ef8bb1291acc374f283a13de8aa1b0dfa57840bd3665d8cc23b",
+    "@spy4x/validation@1.103.0": {
+      "integrity": "b3eefc6c5ada64cb14b81d2eed22053abfe7480203fbda84b7dab5d04ecd45b2",
       "dependencies": [
         "npm:arktype"
       ]
@@ -449,11 +449,11 @@
   "workspace": {
     "dependencies": [
       "jsr:@hono/hono@4.13.8",
-      "jsr:@spy4x/caldav@1.102.0",
-      "jsr:@spy4x/net@1.102.0",
-      "jsr:@spy4x/platform@1.102.0",
-      "jsr:@spy4x/server@1.102.0",
-      "jsr:@spy4x/time@1.102.0"
+      "jsr:@spy4x/caldav@1.103.0",
+      "jsr:@spy4x/net@1.103.0",
+      "jsr:@spy4x/platform@1.103.0",
+      "jsr:@spy4x/server@1.103.0",
+      "jsr:@spy4x/time@1.103.0"
     ]
   }
 }
