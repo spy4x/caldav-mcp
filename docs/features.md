@@ -24,7 +24,7 @@ show up in `query_events`, with the date range and text filters applied by calda
 `#<UID>` at the end. The `etag` is `null`.
 
 - **Read-only.** Every write to a subscription (`create_event`, `update_event`, `delete_event`,
-  `delete_calendar` and the task tools) is refused with code `ReadOnly` before anything is sent.
+  `delete_calendar` and the task tools) is refused with code `ReadOnly` before any change is sent.
 - **Events only.** Task queries leave subscriptions out.
 - **Read from your server, never the feed.** caldav-mcp reads the server's copy with
   `GET <calendar>?export`, which sabre/dav servers such as Nextcloud offer. A server without it
