@@ -1,3 +1,10 @@
+# No run on a pull request's label, title, body or draft change (`pull_request_metadata`) or on
+# its close. Those runs skipped the image builds, which match only `pull_request`, yet once the
+# server reports title-edit runs under the required `pr` context (spy4x/homelab#165) such a run
+# could turn a failed required check green.
+when:
+  - event: [push, pull_request, tag, manual]
+
 steps:
   check:
     image: denoland/deno:2.9.7@sha256:fa335acdf6b72106eda2cb6a8cb5f4187e7630e357467489db4b2e7352d5e432
