@@ -23,7 +23,6 @@
     "jsr:@std/path@1.1.6": "1.1.6",
     "jsr:@std/ulid@1.0.0": "1.0.0",
     "jsr:@std/uuid@1.1.2": "1.1.2",
-    "jsr:@std/yaml@*": "1.3.0",
     "npm:@hexagon/base64@^1.1.27": "1.1.28",
     "npm:@levischuck/tiny-cbor@~0.2.2": "0.2.11",
     "npm:@noble/ciphers@^2.1.1": "2.4.0",
@@ -166,9 +165,6 @@
     },
     "@std/uuid@1.1.2": {
       "integrity": "348b68ca357058d83e3aa463c8a72e836d7df7e9e095332b0e1ec78873b40b7a"
-    },
-    "@std/yaml@1.3.0": {
-      "integrity": "b250103854378b8b36cbff0fe95aec017d3d9ce86b489c67605180c602fb4922"
     }
   },
   "npm": {
