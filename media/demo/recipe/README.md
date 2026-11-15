@@ -40,3 +40,7 @@ music.
 - `pointer.js`, `human-mouse.ts`: the drawn pointer and the human-paced mouse, from the same skill.
 - `fonts/`: IBM Plex Sans and Mono for the page (SIL Open Font License, `LICENSE-ibm-plex.txt`).
 - `deno.jsonc`: the recipe's own config, so Playwright stays out of the server's dependencies.
+- `social-preview.ts` and `social-preview.html`: the 1280x640 GitHub social preview,
+  `media/social-preview.png`, from the video's last answer. Rerun it after a new video with
+  `deno run -A --config media/demo/recipe/deno.jsonc media/demo/recipe/social-preview.ts`, then
+  upload the image in the repository's Settings, General, Social preview (GitHub has no API for it).

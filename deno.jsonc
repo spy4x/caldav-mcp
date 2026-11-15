@@ -7,7 +7,7 @@
     "include": ["main.ts", "env.ts", "mcp.ts", "oauth.ts", "grants.ts", "caldav/**/*.ts", "tools/**/*.ts", "LICENSE", "README.md"],
     "exclude": ["**/*_test.ts", "caldav/testing"]
   },
-  "description": "Lightweight CalDAV MCP server — events + todos for AI agents",
+  "description": "MCP server that lets your AI assistant read and manage calendars and tasks on your own CalDAV server",
   // Our own @spy4x/* releases resolve at once; everything else waits a day (supply-chain guard).
   "minimumDependencyAge": { "age": "1440", "exclude": ["jsr:@spy4x/*"] },
   "tasks": {
