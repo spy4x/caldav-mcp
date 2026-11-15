@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>caldav-mcp social preview</title>
+    <style>
+      @font-face {
+        font-family: "Plex Sans";
+        src: url("fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: "Plex Sans";
+        src: url("fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+        font-weight: 600;
+      }
+      * {
+        margin: 0;
+        box-sizing: border-box;
+      }
+      body {
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: 430px 1fr;
+        align-items: center;
+        gap: 40px;
+        padding: 0 0 0 64px;
+        background: #141210;
+        color: #ede8e0;
+        font-family: "Plex Sans", sans-serif;
+      }
+      h1 {
+        font-size: 64px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      p {
+        margin-top: 20px;
+        font-size: 28px;
+        line-height: 1.35;
+        color: #c9c2b8;
+      }
+      small {
+        display: block;
+        margin-top: 32px;
+        font-size: 20px;
+        color: #8f887e;
+      }
+      .shot {
+        height: 512px;
+        overflow: hidden;
+        border: 1px solid #3a3530;
+        border-right: 0;
+        border-radius: 16px 0 0 16px;
+      }
+      /* The frame is the demo at 46 s, cropped on the right. */
+      video {
+        display: block;
+        width: 840px;
+        margin-top: -6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <h1>caldav-mcp</h1>
+      <p>Let your AI assistant read and manage your calendar and tasks on your own CalDAV server.</p>
+      <small>MCP server · MIT · self-hosted</small>
+    </div>
+    <div class="shot"><video src="../demo.webm" muted preload="auto"></video></div>
+  </body>
+</html>
